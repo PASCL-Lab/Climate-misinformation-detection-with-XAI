@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Climate Misinformation Detector",
+  "version": "1.0",
+  "description": "Detect climate misinformation using AI with confidence graphs and explanations",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://your-api-domain.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Climate Misinformation Detector"
+  },
+  "icons": {
+    "16": "icons/images.png",
+    "48": "icons/images.png",
+    "128": "icons/images.png"
+  }
+}
