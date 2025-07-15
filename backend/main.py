@@ -11,7 +11,6 @@ from typing import List, Tuple, Dict
 import torch
 import warnings
 import numpy as np
-from lime.lime_text import LimeTextExplainer
 import google.generativeai as genai
 import torch
 from transformers import (
@@ -21,6 +20,14 @@ from transformers import (
     Trainer,
     EarlyStoppingCallback
 )
+
+# Try to import Transformer Interpret
+try:
+    from transformers_interpret import SequenceClassificationExplainer
+    TRANSFORMER_INTERPRET_AVAILABLE = True
+except ImportError:
+    TRANSFORMER_INTERPRET_AVAILABLE = False
+    print("Warning: transformers_interpret not available. Install with: pip install transformers-interpret")
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -52,6 +59,7 @@ class DetectionResult(BaseModel):
     final_result: Optional[Dict[str, Any]] = None
     explanation: Optional[str] = None
     confidence: Optional[float] = None
+    word_attributions: Optional[List[Dict[str, Any]]] = None
 
 # Global variables
 pipeline = None
@@ -63,7 +71,7 @@ class ClimateDetectionPipeline:
         self.gemini_model = None
         self.trained_model = None
         self.tokenizer = None
-        self.lime_explainer = None
+        self.transformer_explainer = None
         
         logger.info("Initializing Climate Detection Pipeline...")
         
@@ -82,7 +90,6 @@ class ClimateDetectionPipeline:
                 logger.warning("GEMINI_API_KEY not set")
                 return
             
-         
             genai.configure(api_key=GEMINI_API_KEY)
             
             model_names = [
@@ -115,7 +122,6 @@ class ClimateDetectionPipeline:
             logger.error(f"Gemini setup failed: {e}")
 
     def load_trained_model(self):
-    
         try:
             logger.info("Loading trained model...")
 
@@ -161,9 +167,8 @@ class ClimateDetectionPipeline:
                 logger.info(f"Fallback model loaded - Output shape: {probs.shape}")
                 logger.info(f"Number of classes: {probs.shape[-1]}")
 
-
     def setup_xai(self):
-        """Setup XAI components with proper error handling"""
+        """Setup XAI components with Transformer Interpret"""
         try:
             if not self.trained_model:
                 logger.warning("Skipping XAI setup - model not loaded")
@@ -171,16 +176,20 @@ class ClimateDetectionPipeline:
             
             logger.info("Setting up XAI components...")
             
-            # Setup LIME with error handling
-            try:
-                self.lime_explainer = LimeTextExplainer(
-                    class_names=['SUPPORT', 'REFUTE', 'NOT_ENOUGH_INFO']
-                )
-                logger.info("LIME initialized")
-            except ImportError:
-                logger.error("LIME not available")
-            except Exception as e:
-                logger.error(f"LIME setup failed: {e}")
+            # Setup Transformer Interpret
+            if TRANSFORMER_INTERPRET_AVAILABLE:
+                try:
+                    self.transformer_explainer = SequenceClassificationExplainer(
+                        self.trained_model, 
+                        self.tokenizer
+                    )
+                    logger.info("Transformer Interpret initialized successfully")
+                except Exception as e:
+                    logger.error(f"Transformer Interpret setup failed: {e}")
+                    self.transformer_explainer = None
+            else:
+                logger.warning("Transformer Interpret not available")
+                self.transformer_explainer = None
             
         except Exception as e:
             logger.error(f"XAI setup failed: {e}")
@@ -209,7 +218,7 @@ class ClimateDetectionPipeline:
                 logger.info(f"Keyword-based domain check: {'YES' if is_climate else 'NO'}")
                 return is_climate
             
-            prompt = prompt = f"""Determine whether the following statement is related to climate or climate change.This may include — but is not limited to — topics such as: global warming, greenhouse gases, CO₂ emissions, temperature rise, melting ice, sea level rise, fossil fuels, deforestation, extreme weather events, renewable energy, or other environmental changes linked to the Earth's climate.Respond with only YES or NO.Statement: {text}"""
+            prompt = f"""Determine whether the following statement is related to climate or climate change.This may include — but is not limited to — topics such as: global warming, greenhouse gases, CO₂ emissions, temperature rise, melting ice, sea level rise, fossil fuels, deforestation, extreme weather events, renewable energy, or other environmental changes linked to the Earth's climate.Respond with only YES or NO.Statement: {text}"""
 
             response = self.gemini_model.generate_content(prompt)
             result = "YES" in response.text.upper()
@@ -283,7 +292,6 @@ class ClimateDetectionPipeline:
             Format: {{ "SUPPORT": 0.X, "REFUTE": 0.X, "NOT_ENOUGH_INFO": 0.X }}
             """
 
-            
             response = self.gemini_model.generate_content(prompt)
             
             # Extract JSON more reliably
@@ -332,8 +340,6 @@ class ClimateDetectionPipeline:
         try:
             if not self.trained_model or not self.tokenizer:
                 return self.get_default_scores("Model unavailable")
-            
-           
             
             inputs = self.tokenizer(
                 text, 
@@ -429,104 +435,231 @@ class ClimateDetectionPipeline:
                 "scores": self.get_default_scores("Ensemble error")
             }
 
-    def generate_lime_explanation(self, text: str) -> List[Tuple[str, float]]:
-        """Generate LIME explanation returning (word, score) tuples sorted by absolute score"""
+    def get_transformer_explanation(self, text: str, prediction: Dict) -> Tuple[List[Dict], str]:
+        """Generate explanation using Transformer Interpret with subword merging and thresholding"""
         try:
-            if not self.lime_explainer or not self.trained_model or not self.tokenizer:
-                return [("lime", 0.0), ("unavailable", 0.0)]
+            if not self.transformer_explainer:
+                logger.info("Transformer Interpret: Not available - explainer not initialized")
+                return [], "Transformer explanation not available."
             
-            def predict_fn(texts):
-                try:
-                    if isinstance(texts, str):
-                        texts = [texts]
-                    
-                    inputs = self.tokenizer(
-                        list(texts), 
-                        return_tensors="pt", 
-                        padding=True, 
-                        truncation=True,
-                        max_length=512
-                    )
-                    
-                    with torch.no_grad():
-                        outputs = self.trained_model(**inputs)
-                        probs = torch.nn.functional.softmax(outputs.logits, dim=1)
-                        probs_np = probs.cpu().numpy()
-                        
-                        if probs_np.shape[1] == 2:
-                            expanded = np.zeros((probs_np.shape[0], 3))
-                            expanded[:, 0] = probs_np[:, 1]
-                            expanded[:, 1] = probs_np[:, 0]
-                            expanded[:, 2] = 0.1
-                            probs_np = expanded
-                        elif probs_np.shape[1] == 1:
-                            expanded = np.zeros((probs_np.shape[0], 3))
-                            expanded[:, 0] = probs_np[:, 0]
-                            expanded[:, 1] = 1.0 - probs_np[:, 0]
-                            expanded[:, 2] = 0.1
-                            probs_np = expanded
-                        
-                        row_sums = probs_np.sum(axis=1)
-                        probs_np = probs_np / row_sums[:, np.newaxis]
-                        
-                        return probs_np
-                        
-                except Exception as e:
-                    logger.error(f"LIME predict_fn error: {e}")
-                    batch_size = len(texts) if isinstance(texts, list) else 1
-                    return np.full((batch_size, 3), 0.33)
+            logger.info(f"Transformer Interpret: Starting analysis for prediction '{prediction['prediction']}'")
             
-            explanation = self.lime_explainer.explain_instance(
-                text, 
-                predict_fn, 
-                num_features=5
+            # Get word attributions using integrated gradients
+            raw_attributions = self.transformer_explainer(
+                text,
+                class_name=prediction['prediction'],  # Explain for the predicted class
+                internal_batch_size=1
             )
             
-            # Get list of (word, score) tuples
-            words_scores = explanation.as_list()
-            # Sort by absolute value of score descending
-            words_scores.sort(key=lambda x: abs(x[1]), reverse=True)
+            logger.info(f"🔍 Raw attributions received: {len(raw_attributions)} tokens")
             
-            logger.info(f"🔍 LIME words with scores: {words_scores}")
-            return words_scores
-        
+            # Merge subwords and aggregate scores
+            merged_tokens = []
+            merged_scores = []
+            current_token = ""
+            current_score = 0.0
+            
+            for token, score in raw_attributions:
+                if token.startswith("##"):
+                    # This is a subword continuation
+                    current_token += token[2:]  # Remove ##
+                    current_score += score
+                else:
+                    # New word - save previous if exists
+                    if current_token:
+                        merged_tokens.append(current_token)
+                        merged_scores.append(current_score)
+                    current_token = token
+                    current_score = score
+            
+            # Add the last token
+            if current_token:
+                merged_tokens.append(current_token)
+                merged_scores.append(current_score)
+            
+            logger.info(f"🔍 After subword merging: {len(merged_tokens)} words")
+            
+            # Calculate dynamic threshold
+            positive_scores = [s for s in merged_scores if s > 0]
+            negative_scores = [s for s in merged_scores if s < 0]
+            
+            if positive_scores:
+                mean_positive = np.mean(positive_scores)
+                std_positive = np.std(positive_scores) if len(positive_scores) > 1 else 0
+                positive_threshold = mean_positive + 0.5 * std_positive
+            else:
+                positive_threshold = 0
+            
+            if negative_scores:
+                mean_negative = np.mean(negative_scores)
+                std_negative = np.std(negative_scores) if len(negative_scores) > 1 else 0
+                negative_threshold = mean_negative - 0.5 * std_negative  # More negative
+            else:
+                negative_threshold = 0
+            
+            logger.info(f"Threshold Analysis:")
+            logger.info(f"   • Positive scores: {len(positive_scores)} words, mean={mean_positive:.3f}, std={std_positive:.3f}" if positive_scores else "   • No positive scores")
+            logger.info(f"   • Positive threshold: {positive_threshold:.3f}")
+            logger.info(f"   • Negative scores: {len(negative_scores)} words, mean={mean_negative:.3f}, std={std_negative:.3f}" if negative_scores else "   • No negative scores")
+            logger.info(f"   • Negative threshold: {negative_threshold:.3f}")
+            
+            # Filter important tokens based on thresholds
+            important_positive = [
+                (token, score) for token, score in zip(merged_tokens, merged_scores) 
+                if score > positive_threshold
+            ]
+            
+            important_negative = [
+                (token, score) for token, score in zip(merged_tokens, merged_scores) 
+                if score < negative_threshold
+            ]
+            
+            # Fallback: If no tokens pass threshold, show top tokens
+            if not important_positive and positive_scores:
+                sorted_positive = sorted(
+                    [(token, score) for token, score in zip(merged_tokens, merged_scores) if score > 0],
+                    key=lambda x: x[1], reverse=True
+                )
+                important_positive = sorted_positive[:2]
+                logger.info(" No tokens passed positive threshold, using top 2 positive")
+            
+            if not important_negative and negative_scores:
+                sorted_negative = sorted(
+                    [(token, score) for token, score in zip(merged_tokens, merged_scores) if score < 0],
+                    key=lambda x: x[1]  # Most negative first
+                )
+                important_negative = sorted_negative[:2]
+                logger.info(" No tokens passed negative threshold, using top 2 negative")
+            
+            # Combine and create final attribution list
+            all_important = important_positive + important_negative
+            
+            # Format for output
+            attributions_list = []
+            for token, score in all_important:
+                attributions_list.append({
+                    "word": token,
+                    "attribution": float(score),
+                    "importance": abs(float(score)),
+                    "passed_threshold": True
+                })
+            
+            # Add some non-threshold tokens for context (top remaining by absolute value)
+            remaining_tokens = [
+                (token, score) for token, score in zip(merged_tokens, merged_scores)
+                if (token, score) not in all_important
+            ]
+            remaining_sorted = sorted(remaining_tokens, key=lambda x: abs(x[1]), reverse=True)
+            
+            for token, score in remaining_sorted[:3]:  # Add top 3 remaining
+                attributions_list.append({
+                    "word": token,
+                    "attribution": float(score),
+                    "importance": abs(float(score)),
+                    "passed_threshold": False
+                })
+            
+            # Sort final list by importance
+            attributions_list.sort(key=lambda x: x["importance"], reverse=True)
+            
+            # Log the results
+            threshold_passed = [attr for attr in attributions_list if attr["passed_threshold"]]
+            threshold_failed = [attr for attr in attributions_list if not attr["passed_threshold"]]
+            
+            logger.info(f"Transformer Interpret Results:")
+            logger.info(f"   • Total words analyzed: {len(merged_tokens)}")
+            logger.info(f"   • Words passing threshold: {len(threshold_passed)}")
+            logger.info(f"   • Method: Integrated Gradients with dynamic thresholding")
+            logger.info(f"   • Target class: {prediction['prediction']}")
+            
+            if threshold_passed:
+                logger.info(f"   • Important words (above threshold):")
+                for attr in threshold_passed[:5]:
+                    logger.info(f"     - {attr['word']}: {attr['attribution']:+.3f} ✓")
+            
+            if threshold_failed and threshold_passed:
+                logger.info(f"   • Context words (below threshold):")
+                for attr in threshold_failed[:3]:
+                    logger.info(f"     - {attr['word']}: {attr['attribution']:+.3f}")
+            
+            if attributions_list:
+                max_attr = max([attr["attribution"] for attr in attributions_list])
+                min_attr = min([attr["attribution"] for attr in attributions_list])
+                logger.info(f"   • Attribution range: {min_attr:.3f} to {max_attr:.3f}")
+            
+            # Generate human-readable explanation
+            explanation_text = self._format_attribution_explanation_with_threshold(
+                attributions_list, prediction, positive_threshold, negative_threshold
+            )
+            
+            logger.info("Transformer Interpret: Analysis completed successfully")
+            return attributions_list[:10], explanation_text
+            
         except Exception as e:
-            logger.error(f"LIME explanation error: {e}")
-            return [("lime", 0.0), ("analysis_failed", 0.0)]
+            logger.error(f" Transformer Interpret ERROR: {e}")
+            logger.error(f"   • Error type: {type(e).__name__}")
+            return [], f"Error generating explanation: {str(e)}"
 
-    def get_explanation(self, text: str, prediction: Dict) -> str:
-       
+    def _format_attribution_explanation_with_threshold(self, attributions_list: List[Dict], prediction: Dict, pos_threshold: float, neg_threshold: float) -> str:
+        """Use Gemini to create user-friendly explanation from Transformer Interpret results"""
         try:
-            lime_words_with_scores = self.generate_lime_explanation(text)
-            lime_words_str = ", ".join([f"{word} ({score:+.2f})" for word, score in lime_words_with_scores])
+            if not attributions_list:
+                return "No significant word attributions found."
             
-            if self.gemini_model:
+            # Get the most important words that passed threshold
+            threshold_passed = [attr for attr in attributions_list if attr.get("passed_threshold", False)]
+            
+            # If no words passed threshold, use top words by importance
+            if not threshold_passed:
+                threshold_passed = sorted(attributions_list, key=lambda x: x["importance"], reverse=True)[:5]
+            
+            # Format words with scores for Gemini prompt
+            transformer_words_str = ", ".join([
+                f"{attr['word']} ({attr['attribution']:+.2f})" 
+                for attr in threshold_passed[:8]  # Top 8 most important
+            ])
+            
+            if self.gemini_model and transformer_words_str:
                 prompt = f"""
-            The model classified the following statement as **{prediction['prediction']}** with {prediction['confidence']:.1f}% confidence.
+The model classified the following statement as **{prediction['prediction']}** with {prediction['confidence']:.1f}% confidence.
 
-            Statement: "{text}"
+Statement: "{prediction.get('original_text', '')}"
 
-            Here are the key influential words and their influence scores on the model’s prediction:
-            {lime_words_str}
+Here are the key influential words and their influence scores on the model's prediction:
+{transformer_words_str}
 
-            Note: Positive scores indicate words that support the predicted class, while negative scores indicate words that oppose it. The magnitude of the score reflects the strength of the influence.
+Note: Positive scores indicate words that support the predicted class, while negative scores indicate words that oppose it. The magnitude of the score reflects the strength of the influence.
 
-            Using this information, briefly explain why the model likely made this prediction based on these words and their scores. 
-            Ignore trivial or generic terms, and keep the explanation faithful to the sentence’s meaning.
+Using this information, briefly explain why the model likely made this prediction based on these words and their scores. 
+Ignore trivial or generic terms, and keep the explanation faithful to the sentence's meaning.
 
-            Then, write a short follow-up sentence that adds helpful scientific context or clarification related to the topic.
-            This may include a real-world implication, fact, or environmental insight that helps the user understand the statement more fully.
-            Keep everything concise and accurate.
-            """
+Then, write a short follow-up sentence that adds helpful scientific context or clarification related to the topic.
+This may include a real-world implication, fact, or environmental insight that helps the user understand the statement more fully.
+Keep everything concise and accurate.
+"""
+                
                 response = self.gemini_model.generate_content(prompt)
                 explanation = response.text.strip()
-                logger.info(f"Explanation generated")
+                logger.info("User-friendly explanation generated from Transformer Interpret results")
                 return explanation
             
         except Exception as e:
-            logger.error(f"Explanation error: {e}")
+            logger.error(f"Explanation generation error: {e}")
         
-        return f"The AI ensemble classified this statement as {prediction['prediction']} with {prediction['confidence']:.1%} confidence. This assessment is based on patterns learned from climate science literature and training data."
+        # Fallback explanation
+        pred_class = prediction['prediction']
+        confidence = prediction['confidence']
+        return f"The AI ensemble classified this statement as {pred_class} with {confidence:.1%} confidence. This assessment is based on patterns learned from climate science literature and training data."
+
+    def get_explanation(self, text: str, prediction: Dict) -> Tuple[str, List[Dict]]:
+        """Get comprehensive explanation combining Transformer Interpret and Gemini"""
+        # Add original text to prediction for context
+        prediction['original_text'] = text
+        
+        # Get Transformer Interpret explanation
+        word_attributions, transformer_explanation = self.get_transformer_explanation(text, prediction)
+        
+        return transformer_explanation, word_attributions
 
 
 # Basic endpoints
@@ -546,7 +679,8 @@ async def health_check():
         "components": {
             "gemini": pipeline.gemini_model is not None,
             "bert_model": pipeline.trained_model is not None,
-            "lime": pipeline.lime_explainer is not None
+            "transformer_interpret": pipeline.transformer_explainer is not None,
+            "transformer_interpret_available": TRANSFORMER_INTERPRET_AVAILABLE
         }
     }
 
@@ -564,7 +698,7 @@ async def detect_misinformation(request: QueryRequest):
         if not text:
             raise HTTPException(status_code=400, detail="Text cannot be empty")
         
-        logger.info(f" Analyzing: {text}")
+        logger.info(f"Analyzing: {text}")
         
         # Domain check
         is_climate_related = pipeline.check_climate_domain(text)
@@ -579,12 +713,11 @@ async def detect_misinformation(request: QueryRequest):
         gemini_pred = pipeline.get_gemini_prediction(text)
         model_pred = pipeline.get_model_prediction(text)
         
-        # Combine
+        # Combine predictions
         final_result = pipeline.combine_predictions(gemini_pred, model_pred)
         
-        # Explanation
-        explanation = "for god sake"
-        #explanation = pipeline.get_explanation(text, final_result)
+        # Get explanations and word attributions
+        explanation, word_attributions = pipeline.get_explanation(text, final_result)
         
         return DetectionResult(
             is_climate_related=True,
@@ -592,7 +725,8 @@ async def detect_misinformation(request: QueryRequest):
             model_prediction=model_pred,
             final_result=final_result,
             explanation=explanation,
-            confidence=final_result["confidence"]
+            confidence=final_result["confidence"],
+            word_attributions=word_attributions
         )
     
     except HTTPException:
