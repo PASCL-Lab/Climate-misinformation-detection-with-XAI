@@ -3,8 +3,10 @@ const API_BASE_URL = 'http://localhost:8000';
 // DOM elements
 const statementInput = document.getElementById('statementInput');
 const analyzeBtn = document.getElementById('analyzeBtn');
+const selectTextBtn = document.getElementById('selectTextBtn');
 const clearBtn = document.getElementById('clearBtn');
 const loading = document.getElementById('loading');
+const inputSection = document.getElementById('inputSection');
 const results = document.getElementById('results');
 const outOfDomain = document.getElementById('outOfDomain');
 const error = document.getElementById('error');
@@ -20,40 +22,44 @@ const explanationContent = document.getElementById('explanationContent');
 
 // Debug logging function
 function debugLog(message, data = null) {
-  console.log(`[DEBUG] ${message}`, data);
+  console.log(`[POPUP] ${message}`, data);
 }
 
-// Event listeners
-analyzeBtn.addEventListener('click', analyzeStatement);
-clearBtn.addEventListener('click', clearResults);
-
-statementInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter' && e.ctrlKey) {
-    analyzeStatement();
-  }
-});
-
-// Load saved statement on popup open
+// Initialize when DOM loads
 document.addEventListener('DOMContentLoaded', () => {
-  debugLog('DOM Content Loaded');
+  debugLog('Popup DOM loaded');
   
+  // Load saved statement
   chrome.storage.local.get(['lastStatement'], (result) => {
     if (result.lastStatement) {
       statementInput.value = result.lastStatement;
-      debugLog('Loaded saved statement', result.lastStatement);
+      debugLog('Loaded saved statement');
+    }
+  });
+  
+  // Add event listeners
+  analyzeBtn.addEventListener('click', analyzeInPopup);
+  selectTextBtn.addEventListener('click', activateTextSelection);
+  clearBtn.addEventListener('click', clearResults);
+  
+  // Save text when typing
+  statementInput.addEventListener('input', () => {
+    chrome.storage.local.set({ lastStatement: statementInput.value });
+  });
+  
+  // Enter key to analyze
+  statementInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      analyzeInPopup();
     }
   });
 });
 
-// Save statement when typing
-statementInput.addEventListener('input', () => {
-  chrome.storage.local.set({ lastStatement: statementInput.value });
-});
-
-async function analyzeStatement() {
+// Analyze directly in popup (no side panel)
+async function analyzeInPopup() {
   const statement = statementInput.value.trim();
   
-  debugLog('Analysis started', { statement });
+  debugLog('Analyzing in popup:', statement);
   
   if (!statement) {
     showError('Please enter a statement to analyze.');
@@ -81,7 +87,6 @@ async function analyzeStatement() {
     
     debugLog('API response received', { 
       status: response.status, 
-      statusText: response.statusText,
       ok: response.ok 
     });
     
@@ -113,6 +118,46 @@ async function analyzeStatement() {
   }
 }
 
+// Activate text selection and open side panel
+async function activateTextSelection() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Check if we can access this tab
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://')) {
+      showError('Text selection not available on browser pages. Try on a regular website.');
+      return;
+    }
+    
+    debugLog('Opening side panel for text selection');
+    
+    // Just open the side panel - don't activate text selection
+    await chrome.sidePanel.open({ tabId: tab.id });
+    debugLog('Side panel opened');
+    
+    // Show success message in popup
+    selectTextBtn.textContent = 'Panel Opened';
+    selectTextBtn.style.background = '#4CAF50';
+    
+    // Reset button after delay and close popup
+    setTimeout(() => {
+      selectTextBtn.textContent = 'Select from Web Page';
+      selectTextBtn.style.background = '';
+    }, 1000);
+    
+    // Close popup after opening side panel
+    setTimeout(() => {
+      window.close();
+    }, 1500);
+    
+    debugLog('Side panel opened, popup will close');
+    
+  } catch (error) {
+    debugLog('Error opening side panel:', error);
+    showError('Failed to open side panel: ' + error.message);
+  }
+}
+
 function displayResults(data) {
   debugLog('displayResults called with data:', data);
   
@@ -132,12 +177,9 @@ function displayResults(data) {
   }
   
   const finalResult = data.final_result;
-  debugLog('Final result extracted:', finalResult);
-  
   const prediction = finalResult.prediction;
   const confidence = finalResult.confidence;
   const scores = finalResult.scores;
-  debugLog('Scores extracted:', scores);
   
   debugLog('Extracted values:', { prediction, confidence, scores });
   
@@ -149,18 +191,16 @@ function displayResults(data) {
   
   // Update main classification
   updateClassification(prediction, confidence);
-  results.classList.remove('hidden');
+  
   // Update confidence visualizations
   updateConfidenceVisuals(scores);
   
   // Update explanation
   updateExplanation(data.explanation);
   
-  // Show results with animation
-  setTimeout(() => {
-    results.classList.remove('hidden');
-    debugLog('Results displayed');
-  }, 100);
+  // Show results
+  results.classList.remove('hidden');
+  debugLog('Results displayed in popup');
 }
 
 function updateClassification(prediction, confidence) {
@@ -186,14 +226,10 @@ function updateClassification(prediction, confidence) {
     class: 'not_enough_info'
   };
   
-  debugLog('Classification info:', classInfo);
-  
   resultClassification.textContent = classInfo.text;
   resultClassification.className = `result-classification ${classInfo.class}`;
   
   overallConfidence.textContent = `${(confidence * 100).toFixed(1)}% Confidence`;
-  
-  debugLog('Classification UI updated');
 }
 
 function updateConfidenceVisuals(scores) {
@@ -209,8 +245,6 @@ function updateConfidenceVisuals(scores) {
     }
   }
   
-  debugLog('Scores validation passed');
-  
   // Update progress bars with staggered animation
   setTimeout(() => updateProgressBar(supportFill, scores.SUPPORT), 200);
   setTimeout(() => updateProgressBar(refuteFill, scores.REFUTE), 400);
@@ -221,22 +255,23 @@ function updateProgressBar(element, value) {
   const percentage = Math.round(value * 100);
   element.style.width = `${percentage}%`;
 
-  // Adjust position or fallback
+  // Adjust text position based on percentage
   if (percentage < 15) {
     element.style.justifyContent = 'flex-start';
     element.style.paddingLeft = '5px';
-    element.style.color = '#333'; // dark for visibility
+    element.style.paddingRight = '0px';
+    element.style.color = '#333';
     element.style.textShadow = 'none';
   } else {
     element.style.justifyContent = 'flex-end';
     element.style.paddingLeft = '0px';
+    element.style.paddingRight = '8px';
     element.style.color = 'white';
     element.style.textShadow = '0 1px 2px rgba(0,0,0,0.2)';
   }
 
   animateNumber(element, 0, percentage, 800);
 }
-
 
 function animateNumber(element, start, end, duration) {
   const startTime = performance.now();
@@ -271,8 +306,6 @@ function updateExplanation(explanation) {
       The AI ensemble has provided confidence scores based on training data and analysis patterns.
     `;
   }
-  
-  debugLog('Explanation updated');
 }
 
 function showError(message) {
@@ -292,13 +325,16 @@ function setLoading(isLoading) {
   debugLog('setLoading called', { isLoading });
   
   if (isLoading) {
+    // Don't hide input section - keep it visible
     loading.classList.remove('hidden');
     analyzeBtn.disabled = true;
     analyzeBtn.textContent = 'Analyzing...';
+    selectTextBtn.disabled = true;
   } else {
     loading.classList.add('hidden');
     analyzeBtn.disabled = false;
-    analyzeBtn.textContent = 'Analyze Statement';
+    analyzeBtn.textContent = 'Quick Analyze';
+    selectTextBtn.disabled = false;
   }
 }
 
@@ -317,6 +353,21 @@ function clearResults() {
   
   statementInput.focus();
 }
+
+// Listen for messages from content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  debugLog('Message received:', request);
+  
+  if (request.action === 'textSelected') {
+    // Text was selected, side panel will handle it
+    debugLog('Text selected, closing popup');
+    setTimeout(() => {
+      window.close();
+    }, 200);
+  }
+  
+  sendResponse({ success: true });
+});
 
 // Add error handling
 window.addEventListener('error', (event) => {

@@ -2,349 +2,38 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <style>
-    body {
-      width: 450px;
-      min-height: 550px;
-      margin: 0;
-      padding: 24px;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 80%);
-      color: white;
-      box-sizing: border-box;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-
-    .header h1 {
-      margin: 0;
-      font-size: 26px;
-      font-weight: 600;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    }
-
-    .header p {
-      margin: 10px 0 0 0;
-      opacity: 0.9;
-      font-size: 15px;
-    }
-
-    .input-section {
-      margin-bottom: 24px;
-    }
-
-    .input-section label {
-      display: block;
-      margin-bottom: 10px;
-      font-weight: 500;
-      font-size: 15px;
-    }
-
-    .input-section textarea {
-      width: 100%;
-      height: 120px;
-      padding: 15px;
-      border: none;
-      border-radius: 10px;
-      font-size: 14px;
-      font-family: inherit;
-      resize: vertical;
-      box-sizing: border-box;
-      background: rgba(255, 255, 255, 0.95);
-      color: #333;
-      line-height: 1.4;
-    }
-
-    .input-section textarea:focus {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
-    }
-
-    .button-group {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 30px;
-    }
-
-    .btn {
-      flex: 1;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-
-    .btn-primary {
-      background: #4CAF50;
-      color: white;
-      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-    }
-
-    .btn-primary:hover {
-      background: #45a049;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
-    }
-
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.3);
-      transform: translateY(-1px);
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none !important;
-    }
-
-    .loading {
-      display: none;
-      text-align: center;
-      padding: 30px;
-    }
-
-    .loading .spinner {
-      width: 48px;
-      height: 48px;
-      border: 4px solid rgba(255, 255, 255, 0.3);
-      border-top: 4px solid white;
-      border-radius: 50%;
-      margin: 0 auto 20px;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .results {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      padding: 24px;
-      margin-top: 24px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .result-header {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-
-    .result-classification {
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 12px;
-    }
-
-    .result-classification.support {
-      color: #4CAF50;
-    }
-
-    .result-classification.refute {
-      color: #f44336;
-    }
-
-    .result-classification.not_enough_info {
-      color: #ff9800;
-    }
-    .top-summary-box {
-      background: rgba(255, 255, 255, 0.95);
-      color: #333;
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      text-align: center;
-    }
-
-    .top-summary-box .result-classification {
-      margin: 0;
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    .top-summary-box .overall-confidence {
-      font-size: 18px;
-      font-weight: 600;
-      margin: 8px 0;
-    }
-
-    .top-summary-box .ai-badge {
-      background: #e0e0e0;
-      color: #333;
-      padding: 4px 12px;
-      font-weight: 600;
-      border-radius: 20px;
-      display: inline-block;
-    }
-
-
-    .overall-confidence {
-      font-size: 18px;
-      font-weight: 600;
-      opacity: 0.9;
-    }
-
-    .confidence-section {
-      margin: 30px 0;
-    }
-
-    .confidence-title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 20px;
-      text-align: center;
-    }
-
-    .confidence-bars {
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      margin: 24px 0;
-    }
-
-    .confidence-item {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .confidence-label {
-      width: 130px;
-      font-size: 14px;
-      font-weight: 600;
-      text-align: right;
-    }
-
-    .confidence-bar {
-      flex: 1;
-      height: 28px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 14px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .confidence-fill {
-      height: 100%;
-      border-radius: 14px;
-      transition: width 1s ease;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding-right: 12px;
-      color: white;
-      font-size: 13px;
-      font-weight: 700;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-
-    .confidence-fill.support {
-      background: linear-gradient(90deg, #4CAF50, #66BB6A);
-    }
-
-    .confidence-fill.refute {
-      background: linear-gradient(90deg, #f44336, #EF5350);
-    }
-
-    .confidence-fill.not_enough_info {
-      background: linear-gradient(90deg, #ff9800, #FFA726);
-    }
-
-    .explanation-section {
-      margin-top: 30px;
-    }
-
-    .explanation-title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .explanation-content {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 18px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.7;
-      border-left: 4px solid rgba(255, 255, 255, 0.4);
-    }
-
-    .error {
-      background: rgba(244, 67, 54, 0.2);
-      border: 1px solid rgba(244, 67, 54, 0.5);
-      color: #ffebee;
-      padding: 20px;
-      border-radius: 12px;
-      margin-top: 20px;
-      text-align: center;
-    }
-
-    .out-of-domain {
-      background: rgba(255, 152, 0, 0.2);
-      border: 1px solid rgba(255, 152, 0, 0.5);
-      color: #fff3e0;
-      padding: 20px;
-      border-radius: 12px;
-      margin-top: 20px;
-      text-align: center;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    
-  </style>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="header">
-    <h1>Climate Fact Checker</h1>
-    <p>Climate Misinformation Detection with confidence visualization</p>
+    <h1>🌍 Climate Fact Checker</h1>
+    <p>AI-powered climate misinformation detection</p>
   </div>
 
-  <div class="input-section">
+  <div id="inputSection" class="input-section">
     <label for="statementInput">Enter a statement to analyze:</label>
     <textarea 
       id="statementInput" 
       placeholder="e.g., 'Global warming is a hoax created by scientists to get funding' or 'Rising CO2 levels are causing ocean acidification'">
     </textarea>
-  </div>
-
-  <div class="button-group">
-    <button id="analyzeBtn" class="btn btn-primary">Analyze Statement</button>
-    <button id="clearBtn" class="btn btn-secondary">Clear</button>
+    
+    <div class="button-group">
+      <button id="analyzeBtn" class="btn btn-primary">Quick Analyze</button>
+      <button id="selectTextBtn" class="btn btn-secondary">Select from Web Page</button>
+    </div>
+    
+    <button id="clearBtn" class="btn btn-clear">Clear</button>
   </div>
 
   <div id="loading" class="loading hidden">
     <div class="spinner"></div>
-    <p>Processing...</p>
+    <p>Analyzing...</p>
   </div>
 
   <div id="results" class="results hidden">
     <div class="top-summary-box">
-      
       <div id="resultClassification" class="result-classification">Analysis Result</div>
       <div id="overallConfidence" class="overall-confidence">Confidence Level</div>
-      
-    
     </div>
 
     <div class="confidence-section">
@@ -352,19 +41,19 @@
       
       <div class="confidence-bars">
         <div class="confidence-item">
-          <div class="confidence-label">EVIDENCE SUPPORTS</div>
+          <div class="confidence-label">SUPPORTS</div>
           <div class="confidence-bar">
             <div id="supportFill" class="confidence-fill support">0%</div>
           </div>
         </div>
         <div class="confidence-item">
-          <div class="confidence-label">EVIDENCE REFUTES</div>
+          <div class="confidence-label">REFUTES</div>
           <div class="confidence-bar">
             <div id="refuteFill" class="confidence-fill refute">0%</div>
           </div>
         </div>
         <div class="confidence-item">
-          <div class="confidence-label">INSUFFICIENT DATA</div>
+          <div class="confidence-label">INSUFFICIENT</div>
           <div class="confidence-bar">
             <div id="uncertainFill" class="confidence-fill not_enough_info">0%</div>
           </div>
@@ -373,9 +62,7 @@
     </div>
 
     <div class="explanation-section">
-      <div class="explanation-title">
-        Explanation
-      </div>
+      <div class="explanation-title">Explanation</div>
       <div id="explanationContent" class="explanation-content">
         Loading explanation...
       </div>
@@ -383,12 +70,12 @@
   </div>
 
   <div id="outOfDomain" class="out-of-domain hidden">
-    <h3>Out of Domain</h3>
-    <p>This statement doesn't appear to be related to climate change.This tool is specifically trained to analyze climate science claims.</p>
+    <h3> Out of Domain</h3>
+    <p>This statement doesn't appear to be related to climate change. This tool is specifically trained to analyze climate science claims.</p>
   </div>
 
   <div id="error" class="error hidden">
-    <h3>Error</h3>
+    <h3> Error</h3>
     <p id="errorMessage">Something went wrong. Please try again.</p>
   </div>
 

@@ -4,15 +4,32 @@
   "version": "1.0",
   "description": "Detect climate misinformation using AI with confidence graphs and explanations",
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://your-api-domain.com/*"
+    "https://your-api-domain.com/*",
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Climate Misinformation Detector"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
   },
   "icons": {
     "16": "icons/images.png",

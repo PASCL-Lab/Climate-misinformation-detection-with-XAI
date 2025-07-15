@@ -583,8 +583,8 @@ async def detect_misinformation(request: QueryRequest):
         final_result = pipeline.combine_predictions(gemini_pred, model_pred)
         
         # Explanation
-        
-        explanation = pipeline.get_explanation(text, final_result)
+        explanation = "for god sake"
+        #explanation = pipeline.get_explanation(text, final_result)
         
         return DetectionResult(
             is_climate_related=True,
