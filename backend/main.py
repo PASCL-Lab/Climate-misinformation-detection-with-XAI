@@ -21,7 +21,7 @@ from transformers import (
     EarlyStoppingCallback
 )
 
-# Try to import Transformer Interpret
+# Importing Transformer Interpret for explainability
 try:
     from transformers_interpret import SequenceClassificationExplainer
     TRANSFORMER_INTERPRET_AVAILABLE = True
@@ -120,7 +120,7 @@ class ClimateDetectionPipeline:
             logger.error("google-generativeai package not installed")
         except Exception as e:
             logger.error(f"Gemini setup failed: {e}")
-
+    #loading the trained (fine-tuned) model
     def load_trained_model(self):
         try:
             logger.info("Loading trained model...")
@@ -135,7 +135,7 @@ class ClimateDetectionPipeline:
                 self.trained_model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
                 self.trained_model.eval()
 
-            # Test the model and check output shape
+            # Test the model and check output shape which is 3 i.e `SUPPORT`, `REFUTE`, `NOT_ENOUGH_INFO`
             test_input = self.tokenizer("test climate change", return_tensors="pt", truncation=True, padding=True)
             with torch.no_grad():
                 outputs = self.trained_model(**test_input)
@@ -151,8 +151,7 @@ class ClimateDetectionPipeline:
         except Exception as e:
             logger.error(f"Failed to load fine-tuned model: {e}")
             logger.info("Falling back to default Roberta base model with 3 classes.")
-
-            # Load Roberta base with 3 labels (not fine-tuned)
+            # Fallback to Roberta base model if loading fails
             self.tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-base")
             self.trained_model = AutoModelForSequenceClassification.from_pretrained("FacebookAI/roberta-base", num_labels=3)
             self.trained_model.eval()
@@ -207,7 +206,8 @@ class ClimateDetectionPipeline:
         """Check if text is climate-related"""
         try:
             if not self.gemini_model:
-                # Keyword-based fallback
+                # Keyword-based fallback incase Gemini is unavailable
+                logger.info("Gemini model not available, using keyword-based domain check")
                 climate_keywords = [
                     'climate', 'warming', 'carbon', 'temperature', 'greenhouse', 
                     'emissions', 'co2', 'fossil', 'renewable', 'environment',
@@ -217,7 +217,7 @@ class ClimateDetectionPipeline:
                 is_climate = any(keyword in text_lower for keyword in climate_keywords)
                 logger.info(f"Keyword-based domain check: {'YES' if is_climate else 'NO'}")
                 return is_climate
-            
+            #prompt to guide Gemini to check if the text is related to climate change
             prompt = f"""Determine whether the following statement is related to climate or climate change.This may include — but is not limited to — topics such as: global warming, greenhouse gases, CO₂ emissions, temperature rise, melting ice, sea level rise, fossil fuels, deforestation, extreme weather events, renewable energy, or other environmental changes linked to the Earth's climate.Respond with only YES or NO.Statement: {text}"""
 
             response = self.gemini_model.generate_content(prompt)
@@ -234,7 +234,7 @@ class ClimateDetectionPipeline:
         try:
             if not self.gemini_model:
                 return self.get_default_scores("Gemini unavailable")
-            
+            # Prompt to guide Gemini to evaluate the scientific credibility of the statement
             prompt = f"""You are tasked with evaluating the scientific credibility of the following statement related to climate change.
 
             Use only verified and authoritative sources — such as peer-reviewed research, consensus reports (e.g., IPCC, NASA, NOAA), or reputable scientific journalism — to assess the claim.
@@ -408,7 +408,10 @@ class ClimateDetectionPipeline:
             return self.get_default_scores("Model error")
 
     def combine_predictions(self, gemini_pred: Dict, model_pred: Dict) -> Dict[str, Any]:
-        """Combine predictions safely"""
+        """Combine predictions safely
+        Current approach is to average the scores from Gemini and the fine-tuned model.
+        This can be adjusted based on performance and requirements.
+        """
         try:
             combined = {
                 "SUPPORT": (gemini_pred["SUPPORT"] + model_pred["SUPPORT"]) / 2,
@@ -447,7 +450,7 @@ class ClimateDetectionPipeline:
             # Get word attributions using integrated gradients
             raw_attributions = self.transformer_explainer(
                 text,
-                class_name=prediction['prediction'],  # Explain for the predicted class
+                class_name=prediction['prediction'],  
                 internal_batch_size=1
             )
             
@@ -588,7 +591,7 @@ class ClimateDetectionPipeline:
                 logger.info(f"   • Attribution range: {min_attr:.3f} to {max_attr:.3f}")
             
             # Generate human-readable explanation
-            explanation_text = self._format_attribution_explanation_with_threshold(
+            explanation_text = self._format_attribution_explanation_with_threshold(text,
                 attributions_list, prediction, positive_threshold, negative_threshold
             )
             
@@ -600,7 +603,7 @@ class ClimateDetectionPipeline:
             logger.error(f"   • Error type: {type(e).__name__}")
             return [], f"Error generating explanation: {str(e)}"
 
-    def _format_attribution_explanation_with_threshold(self, attributions_list: List[Dict], prediction: Dict, pos_threshold: float, neg_threshold: float) -> str:
+    def _format_attribution_explanation_with_threshold(self,text, attributions_list: List[Dict], prediction: Dict, pos_threshold: float, neg_threshold: float) -> str:
         """Use Gemini to create user-friendly explanation from Transformer Interpret results"""
         try:
             if not attributions_list:
@@ -623,7 +626,7 @@ class ClimateDetectionPipeline:
                 prompt = f"""
 The model classified the following statement as **{prediction['prediction']}** with {prediction['confidence']:.1f}% confidence.
 
-Statement: "{prediction.get('original_text', '')}"
+Statement: "{text}"
 
 Here are the key influential words and their influence scores on the model's prediction:
 {transformer_words_str}
