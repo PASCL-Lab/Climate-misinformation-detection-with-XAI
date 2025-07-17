@@ -49,7 +49,6 @@ The Climate Misinformation Detector is a browser extension that  analyze climate
    Create a `.env` file:
    ```env
    GEMINI_API_KEY=your-gemini-api-key-here
-   MODEL_PATH=path/to/your/trained/model
    ```
 
 3. **Start the backend server**:
@@ -119,13 +118,13 @@ The system combines ensemble approach for analysis:
 ### Fine-tuned Model Details
 
 #### Model Architecture
-- **Base Model**: [Add your base model details here]
-- **Fine-tuning Approach**: [Add your fine-tuning methodology]
+- **Base Model**: [Add  base model details here]
+- **Fine-tuning Approach**: [Add fine-tuning methodology]
 - **Model Size**: [Add model parameters/size]
 - **Training Framework**: [Add framework used - e.g., Transformers, PyTorch]
 
 #### Training Data
-- **Dataset Name**: [Add your dataset name/source]
+- **Dataset Name**: [Add  dataset name/source]
 - **Dataset Size**: [Add number of samples, train/val/test split]
 - **Data Sources**: [Add where the data came from]
 - **Labeling Methodology**: [Add how labels were assigned]
@@ -187,7 +186,6 @@ Edit `manifest.json` for permissions and settings:
 }
 ```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 
 **Quick Start**: Install dependencies → Start `main.py` → Load extension → Start fact-checking! 
