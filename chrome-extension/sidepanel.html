@@ -216,16 +216,12 @@
       margin-bottom: 10px;
     }
 
-    .result-classification.support {
+    .result-classification.truthful {
       color: #4CAF50;
     }
 
-    .result-classification.refute {
+    .result-classification.misinformation {
       color: #f44336;
-    }
-
-    .result-classification.not_enough_info {
-      color: #ff9800;
     }
 
     .top-summary-box {
@@ -310,16 +306,12 @@
       text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
 
-    .confidence-fill.support {
+    .confidence-fill.truthful {
       background: linear-gradient(90deg, #4CAF50, #66BB6A);
     }
 
-    .confidence-fill.refute {
+    .confidence-fill.misinformation {
       background: linear-gradient(90deg, #f44336, #EF5350);
-    }
-
-    .confidence-fill.not_enough_info {
-      background: linear-gradient(90deg, #ff9800, #FFA726);
     }
 
     .explanation-section {
@@ -366,6 +358,35 @@
       font-size: 13px;
     }
 
+    .incomplete-statement {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+      color: #e3f2fd;
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 15px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .incomplete-statement h3 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      color: #81d4fa;
+      font-size: 14px;
+    }
+
+    .incomplete-statement .guidance {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+      font-style: italic;
+      line-height: 1.5;
+      text-align: left;
+      font-size: 12px;
+    }
+
     .hidden {
       display: none;
     }
@@ -374,7 +395,7 @@
 <body>
   <div class="header">
     <h1>🌍 Climate Fact Checker</h1>
-    <p> Climate misinformation detection tool with XAI</p>
+    <p>AI-powered climate misinformation detection</p>
   </div>
 
   <div class="action-buttons">
@@ -389,7 +410,7 @@
     <label for="statementInput">Or enter text manually:</label>
     <textarea 
       id="statementInput" 
-      placeholder="e.g., 'Global warming is a hoax created by scientists to get funding' or 'Rising CO2 levels are causing ocean acidification'">
+      placeholder="e.g., 'Global warming stopped in 1998' or 'Rising sea levels are threatening coastal cities worldwide'">
     </textarea>
   </div>
 
@@ -403,6 +424,7 @@
     <p>Processing...</p>
   </div>
 
+  <!-- Complete Analysis Results -->
   <div id="results" class="results hidden">
     <div class="top-summary-box">
       <div id="resultClassification" class="result-classification">Analysis Result</div>
@@ -410,25 +432,19 @@
     </div>
 
     <div class="confidence-section">
-      <div class="confidence-title">Confidence Breakdown</div>
+      <div class="confidence-title">Evidence Analysis</div>
       
       <div class="confidence-bars">
         <div class="confidence-item">
           <div class="confidence-label">Support</div>
           <div class="confidence-bar">
-            <div id="supportFill" class="confidence-fill support">0%</div>
+            <div id="supportFill" class="confidence-fill truthful">0%</div>
           </div>
         </div>
         <div class="confidence-item">
           <div class="confidence-label">Refute</div>
           <div class="confidence-bar">
-            <div id="refuteFill" class="confidence-fill refute">0%</div>
-          </div>
-        </div>
-        <div class="confidence-item">
-          <div class="confidence-label">Insufficient</div>
-          <div class="confidence-bar">
-            <div id="uncertainFill" class="confidence-fill not_enough_info">0%</div>
+            <div id="refuteFill" class="confidence-fill misinformation">0%</div>
           </div>
         </div>
       </div>
@@ -444,13 +460,24 @@
     </div>
   </div>
 
-  <div id="outOfDomain" class="out-of-domain hidden">
-    <h3>Out of Domain</h3>
-    <p>This statement doesn't appear to be related to climate change. This tool is specifically trained to analyze climate science claims.</p>
+  <!-- Incomplete Statement -->
+  <div id="incompleteStatement" class="incomplete-statement hidden">
+    <h3>🔍 Need More Information</h3>
+    <p>Your statement needs more specific details for accurate analysis.</p>
+    <div id="guidanceContent" class="guidance">
+      Additional context required...
+    </div>
   </div>
 
+  <!-- Out of Domain -->
+  <div id="outOfDomain" class="out-of-domain hidden">
+    <h3>⚠️ Out of Domain</h3>
+    <p>This statement doesn't appear to be related to climate change. This tool is specifically designed to analyze climate science claims.</p>
+  </div>
+
+  <!-- Error -->
   <div id="error" class="error hidden">
-    <h3>Error</h3>
+    <h3>❌ Error</h3>
     <p id="errorMessage">Something went wrong. Please try again.</p>
   </div>
 

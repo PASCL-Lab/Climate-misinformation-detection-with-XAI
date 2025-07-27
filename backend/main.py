@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import os
-from typing import Dict, List, Any, Optional
+import re
+import string
+from typing import Dict, List, Any, Optional, Tuple
 import logging
 from dotenv import load_dotenv
-from typing import List, Tuple, Dict
 
 import torch
 import warnings
@@ -20,6 +21,39 @@ from transformers import (
     Trainer,
     EarlyStoppingCallback
 )
+
+# Text preprocessing imports
+import nltk
+
+# Don't download NLTK data at module level - do it later
+NLTK_INITIALIZED = False
+
+def initialize_nltk():
+    """Initialize NLTK data with robust error handling"""
+    global NLTK_INITIALIZED
+    
+    if NLTK_INITIALIZED:
+        return True
+    
+    try:
+        # Try to download required NLTK data
+        required_downloads = ['punkt', 'punkt_tab', 'stopwords', 'wordnet', 'omw-1.4']
+        
+        for item in required_downloads:
+            try:
+                nltk.download(item, quiet=True)
+            except Exception as e:
+                print(f"Warning: Could not download {item}: {e}")
+        
+        NLTK_INITIALIZED = True
+        print("✅ NLTK initialized successfully")
+        return True
+        
+    except Exception as e:
+        print(f"❌ NLTK initialization failed: {e}")
+        print("📝 Continuing with basic preprocessing...")
+        NLTK_INITIALIZED = False
+        return False
 
 # Importing Transformer Interpret for explainability
 try:
@@ -54,17 +88,178 @@ class QueryRequest(BaseModel):
 
 class DetectionResult(BaseModel):
     is_climate_related: bool
-    gemini_prediction: Optional[Dict[str, Any]] = None
+    is_complete_statement: Optional[bool] = None
+    completeness_guidance: Optional[str] = None
     model_prediction: Optional[Dict[str, Any]] = None
     final_result: Optional[Dict[str, Any]] = None
     explanation: Optional[str] = None
     confidence: Optional[float] = None
     word_attributions: Optional[List[Dict[str, Any]]] = None
+    status: str  # "complete_analysis", "incomplete_statement", "out_of_domain"
+    # Debug info (optional)
+    preprocessing_info: Optional[Dict[str, str]] = None
 
 # Global variables
 pipeline = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL_PATH = os.getenv("MODEL_PATH")
+
+class TextPreprocessor:
+    """
+    Text preprocessing pipeline matching training data preprocessing
+    """
+    def __init__(self, use_lemmatization=True):
+        self.use_lemmatization = use_lemmatization
+        self.nltk_available = False
+        
+        # Initialize NLTK components with fallbacks
+        self._setup_nltk_components()
+        
+    def _setup_nltk_components(self):
+        """Setup NLTK components with fallback options"""
+        try:
+            # Try to initialize NLTK
+            initialize_nltk()
+            
+            # Try to import and setup NLTK components
+            from nltk.corpus import stopwords
+            from nltk.tokenize import word_tokenize
+            from nltk.stem import WordNetLemmatizer
+            
+            # Initialize stopwords
+            try:
+                self.stop_words = set(stopwords.words('english'))
+                self.nltk_available = True
+            except Exception:
+                # Fallback stopwords
+                self.stop_words = self._get_fallback_stopwords()
+                self.nltk_available = False
+            
+            # Remove important climate-related words from stopwords
+            climate_important_words = {'not', 'no', 'never', 'without', 'against', 'false', 'fake', 'real', 'true'}
+            self.stop_words = self.stop_words - climate_important_words
+            
+            # Initialize lemmatizer
+            if self.use_lemmatization:
+                try:
+                    self.lemmatizer = WordNetLemmatizer()
+                    # Test the lemmatizer
+                    test_word = self.lemmatizer.lemmatize("testing")
+                except Exception:
+                    logger.warning("WordNet lemmatizer not available, disabling lemmatization")
+                    self.use_lemmatization = False
+                    
+            logger.info(f"TextPreprocessor initialized (NLTK available: {self.nltk_available})")
+            
+        except Exception as e:
+            logger.warning(f"NLTK setup failed: {e}. Using fallback preprocessing.")
+            self.stop_words = self._get_fallback_stopwords()
+            self.use_lemmatization = False
+            self.nltk_available = False
+    
+    def _get_fallback_stopwords(self):
+        """Fallback stopwords if NLTK not available"""
+        return set([
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must', 'this', 'that', 'these', 'those',
+            'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his',
+            'her', 'its', 'our', 'their', 'mine', 'yours', 'his', 'hers', 'ours', 'theirs'
+        ])
+    
+    def _simple_tokenize(self, text):
+        """Simple tokenization fallback"""
+        # Remove punctuation and split
+        import re
+        text = re.sub(r'[^\w\s]', ' ', text)
+        return text.split()
+    
+    def clean_text(self, text: str) -> str:
+        """
+        Comprehensive text cleaning pipeline
+        """
+        if not text or text.strip() == '':
+            return ''
+        
+        # Convert to string if not already
+        text = str(text)
+        
+        # 1. URL cleaning - remove URLs
+        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+        text = re.sub(r'www\.(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+        
+        # 2. Hashtag cleaning - remove # but keep the word
+        text = re.sub(r'#(\w+)', r'\1', text)
+        
+        # 3. Mention cleaning - remove @mentions
+        text = re.sub(r'@\w+', '', text)
+        
+        # 4. Remove extra whitespace and newlines
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\n', ' ', text)
+        
+        # 5. Remove numbers (but keep important ones like CO2, etc.)
+        # Keep numbers that are part of scientific terms
+        text = re.sub(r'\b(?<!CO)\d+(?!°|%|C|F|ppm)\b', '', text)
+        
+        # 6. Convert to lowercase
+        text = text.lower()
+        
+        # 7. Remove punctuation but preserve important climate-related symbols
+        # Keep degree symbols, percentages, etc.
+        translator = str.maketrans('', '', string.punctuation.replace('°', '').replace('%', ''))
+        text = text.translate(translator)
+        
+        # 8. Remove extra spaces
+        text = ' '.join(text.split())
+        
+        return text.strip()
+    
+    def tokenize_and_process(self, text: str) -> List[str]:
+        """
+        Tokenize text and apply stemming/lemmatization
+        """
+        if not text:
+            return []
+        
+        # Tokenize with error handling
+        try:
+            if self.nltk_available:
+                from nltk.tokenize import word_tokenize
+                tokens = word_tokenize(text)
+            else:
+                tokens = self._simple_tokenize(text)
+        except Exception as e:
+            logger.debug(f"Tokenization error: {e}, using simple split")
+            tokens = self._simple_tokenize(text)
+        
+        # Remove stopwords and short words (but keep negations)
+        tokens = [token for token in tokens if token not in self.stop_words and len(token) > 2]
+        
+        # Apply lemmatization if available
+        try:
+            if self.use_lemmatization and hasattr(self, 'lemmatizer'):
+                tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
+        except Exception as e:
+            logger.debug(f"Lemmatization error: {e}")
+            pass
+        
+        return tokens
+    
+    def preprocess_text(self, text: str) -> str:
+        """
+        Complete preprocessing pipeline matching training data
+        """
+        # Clean text
+        cleaned_text = self.clean_text(text)
+        
+        # Tokenize and process
+        tokens = self.tokenize_and_process(cleaned_text)
+        
+        # Join back to string
+        processed_text = ' '.join(tokens)
+        
+        return processed_text
 
 class ClimateDetectionPipeline:
     def __init__(self):
@@ -72,6 +267,9 @@ class ClimateDetectionPipeline:
         self.trained_model = None
         self.tokenizer = None
         self.transformer_explainer = None
+        
+        # Initialize text preprocessor
+        self.text_preprocessor = TextPreprocessor(use_lemmatization=True)
         
         logger.info("Initializing Climate Detection Pipeline...")
         
@@ -120,51 +318,46 @@ class ClimateDetectionPipeline:
             logger.error("google-generativeai package not installed")
         except Exception as e:
             logger.error(f"Gemini setup failed: {e}")
-    #loading the trained (fine-tuned) model
+
     def load_trained_model(self):
+        
         try:
-            logger.info("Loading trained model...")
+            logger.info("Loading trained ClimateBERT model...")
 
             if not os.path.exists(MODEL_PATH):
                 logger.error(f"Model path not found: {MODEL_PATH}")
-                raise FileNotFoundError
+                raise FileNotFoundError(f"Model path not found: {MODEL_PATH}")
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
+                
+                # Load tokenizer and model directly
+                logger.info(f"Loading model from: {MODEL_PATH}")
                 self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
                 self.trained_model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
                 self.trained_model.eval()
+                
+                logger.info("✅ Model and tokenizer loaded successfully")
 
-            # Test the model and check output shape which is 3 i.e `SUPPORT`, `REFUTE`, `NOT_ENOUGH_INFO`
+            # Test the model and check output shape
             test_input = self.tokenizer("test climate change", return_tensors="pt", truncation=True, padding=True)
             with torch.no_grad():
                 outputs = self.trained_model(**test_input)
                 logits = outputs.logits
                 probs = torch.nn.functional.softmax(logits, dim=-1)
 
-                logger.info(f"Model loaded - Output shape: {probs.shape}")
-                logger.info(f"Number of classes: {probs.shape[-1]}")
+                logger.info(f"✅ Model loaded - Output shape: {probs.shape}")
+                logger.info(f"✅ Number of classes: {probs.shape[-1]}")
 
-                if probs.shape[-1] != 3:
-                    logger.warning(f"Model outputs {probs.shape[-1]} classes, expected 3")
+                # Verify we have exactly 2 classes for binary classification
+                if probs.shape[-1] != 2:
+                    raise ValueError(f"Expected 2 classes, but model outputs {probs.shape[-1]} classes")
+                
+                logger.info("✅ Model verification complete - Ready for inference")
 
         except Exception as e:
-            logger.error(f"Failed to load fine-tuned model: {e}")
-            logger.info("Falling back to default Roberta base model with 3 classes.")
-            # Fallback to Roberta base model if loading fails
-            self.tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-base")
-            self.trained_model = AutoModelForSequenceClassification.from_pretrained("FacebookAI/roberta-base", num_labels=3)
-            self.trained_model.eval()
-
-            # Optional: Log the shape for the fallback model
-            test_input = self.tokenizer("test climate change", return_tensors="pt", truncation=True, padding=True)
-            with torch.no_grad():
-                outputs = self.trained_model(**test_input)
-                logits = outputs.logits
-                probs = torch.nn.functional.softmax(logits, dim=-1)
-
-                logger.info(f"Fallback model loaded - Output shape: {probs.shape}")
-                logger.info(f"Number of classes: {probs.shape[-1]}")
+            logger.error(f"❌ Failed to load model: {e}")
+            raise e  # Re-raise the exception to stop execution
 
     def setup_xai(self):
         """Setup XAI components with Transformer Interpret"""
@@ -193,156 +386,137 @@ class ClimateDetectionPipeline:
         except Exception as e:
             logger.error(f"XAI setup failed: {e}")
 
-    def get_default_scores(self, reason="Default"):
-        """Return default scores"""
-        return {
-            "SUPPORT": 0.33,
-            "REFUTE": 0.33,
-            "NOT_ENOUGH_INFO": 0.34,
-            "reasoning": reason
-        }
-
-    def check_climate_domain(self, text: str) -> bool:
-        """Check if text is climate-related"""
+    def check_climate_domain_and_completeness(self, original_text: str) -> Dict[str, Any]:
+        """
+        Single Gemini call for both domain check and completeness evaluation
+        Uses ORIGINAL text (not preprocessed)
+        """
         try:
             if not self.gemini_model:
-                # Keyword-based fallback incase Gemini is unavailable
+                # Keyword-based fallback for domain check
                 logger.info("Gemini model not available, using keyword-based domain check")
                 climate_keywords = [
                     'climate', 'warming', 'carbon', 'temperature', 'greenhouse', 
                     'emissions', 'co2', 'fossil', 'renewable', 'environment',
-                    'pollution', 'weather', 'arctic', 'ice', 'ocean', 'atmosphere'
+                    'pollution', 'weather', 'arctic', 'ice', 'ocean', 'atmosphere',
+                    'sea level', 'glacier', 'wildfire', 'drought', 'flood'
                 ]
-                text_lower = text.lower()
+                text_lower = original_text.lower()
                 is_climate = any(keyword in text_lower for keyword in climate_keywords)
-                logger.info(f"Keyword-based domain check: {'YES' if is_climate else 'NO'}")
-                return is_climate
-            #prompt to guide Gemini to check if the text is related to climate change
-            prompt = f"""Determine whether the following statement is related to climate or climate change.This may include — but is not limited to — topics such as: global warming, greenhouse gases, CO₂ emissions, temperature rise, melting ice, sea level rise, fossil fuels, deforestation, extreme weather events, renewable energy, or other environmental changes linked to the Earth's climate.Respond with only YES or NO.Statement: {text}"""
+                
+                return {
+                    "is_climate_related": is_climate,
+                    "is_complete": True if is_climate else None,
+                    "guidance": None,
+                    "reasoning": "Keyword-based fallback - Gemini unavailable"
+                }
+            
+            # Combined domain and completeness check prompt (using original text)
+            prompt = f"""You are evaluating a statement for climate misinformation detection. Perform a two-stage analysis:
+
+**STAGE 1: CLIMATE DOMAIN CHECK**
+Determine if this statement relates to climate change or environmental science, including:
+- Global warming, greenhouse gases, CO₂ emissions, temperature changes
+- Sea level rise, melting ice, extreme weather, fossil fuels
+- Renewable energy, deforestation, ocean acidification, carbon footprint
+- Other environmental changes linked to Earth's climate system
+
+**STAGE 2: COMPLETENESS CHECK (only if climate-related)**
+If the statement IS climate-related, evaluate if it contains enough information for scientific evidence evaluation.
+
+A COMPLETE statement must be:
+1. **Scientifically verifiable** - Can be checked against peer-reviewed research, official climate reports (IPCC, NASA, NOAA)
+2. **Factually grounded** - Makes claims about measurable phenomena, scientific processes, or documented events
+3. **Source-independent** - Does not rely on unverifiable videos, anecdotal stories, or non-scientific claims
+4. **Specific enough** - Contains sufficient detail for scientific evaluation
+5. **No vague references** - Does not use undefined pronouns or references like "his results", "their study", "this research" without clear identification
+
+An INCOMPLETE statement:
+- References unverifiable sources (random videos, anecdotal stories, rumors)
+- Makes claims that cannot be checked against scientific literature
+- Relies on subjective opinions or non-scientific evidence
+- Lacks specificity needed for scientific verification
+- **Contains vague pronoun references** (his/her/their/this/that research/results/study) without identifying the specific person, institution, or study
+- Uses undefined references like "scientists say", "studies show", "research proves" without naming specific sources
+
+**NOW ANALYZE THIS STATEMENT:**
+
+Statement: "{original_text}"
+
+**REQUIRED RESPONSE FORMAT:**
+DOMAIN: [CLIMATE_RELATED or NOT_CLIMATE_RELATED]
+STATUS: [COMPLETE or INCOMPLETE] (only if DOMAIN is CLIMATE_RELATED)
+REASONING: [Detailed explanation focusing on scientific verifiability] (only if DOMAIN is CLIMATE_RELATED)
+GUIDANCE: [If incomplete, suggest how to make it scientifically verifiable. If complete, write "None"] (only if DOMAIN is CLIMATE_RELATED)"""
 
             response = self.gemini_model.generate_content(prompt)
-            result = "YES" in response.text.upper()
-            logger.info(f"Gemini domain check: {'YES' if result else 'NO'}")
-            return result
+            response_text = response.text.strip()
+            logger.info(f"Combined domain/completeness response: {response_text}")
+            
+            # Parse the response
+            lines = response_text.split('\n')
+            domain_line = next((line for line in lines if line.startswith('DOMAIN:')), '')
+            status_line = next((line for line in lines if line.startswith('STATUS:')), '')
+            reasoning_line = next((line for line in lines if line.startswith('REASONING:')), '')
+            guidance_line = next((line for line in lines if line.startswith('GUIDANCE:')), '')
+            
+            # Extract domain result
+            is_climate_related = 'CLIMATE_RELATED' in domain_line.upper()
+            
+            if not is_climate_related:
+                logger.info("Statement not climate-related")
+                return {
+                    "is_climate_related": False,
+                    "is_complete": None,
+                    "guidance": None,
+                    "reasoning": "Statement is not related to climate change or environmental science"
+                }
+            
+            # Extract completeness result (only for climate-related statements)
+            is_complete = 'COMPLETE' in status_line.upper() and 'INCOMPLETE' not in status_line.upper()
+            reasoning = reasoning_line.replace('REASONING:', '').strip() if reasoning_line else "Analysis completed"
+            guidance = guidance_line.replace('GUIDANCE:', '').strip() if guidance_line else None
+            
+            if guidance and guidance.lower() in ['none', 'n/a', '']:
+                guidance = None
+            
+            logger.info(f"Climate-related statement: {'COMPLETE' if is_complete else 'INCOMPLETE'}")
+            if not is_complete:
+                logger.info(f"Guidance: {guidance}")
+            
+            return {
+                "is_climate_related": True,
+                "is_complete": is_complete,
+                "reasoning": reasoning,
+                "guidance": guidance
+            }
             
         except Exception as e:
-            logger.error(f"Domain check error: {e}")
-            return True
+            logger.error(f"Combined domain/completeness check error: {e}")
+            return {
+                "is_climate_related": True,  # Default to allowing analysis
+                "is_complete": True,
+                "reasoning": "Error in combined check - proceeding with analysis",
+                "guidance": None
+            }
 
-    def get_gemini_prediction(self, text: str) -> Dict[str, Any]:
-        """Get Gemini prediction with fallback"""
-        try:
-            if not self.gemini_model:
-                return self.get_default_scores("Gemini unavailable")
-            # Prompt to guide Gemini to evaluate the scientific credibility of the statement
-            prompt = f"""You are tasked with evaluating the scientific credibility of the following statement related to climate change.
-
-            Use only verified and authoritative sources — such as peer-reviewed research, consensus reports (e.g., IPCC, NASA, NOAA), or reputable scientific journalism — to assess the claim.
-
-            Do not rely on general internet content, public opinion, blog posts, or anecdotal evidence. Your analysis should reflect only what is verifiable and recognized within established climate science.
-
-            Return scores between 0.0 and 1.0 for each category below, such that the total sums to exactly 1.0:
-
-            ---
-
-            Example 1:  
-            Statement: "Carbon dioxide levels have remained stable since 1900."  
-            SUPPORT: Scientific evidence supports this statement  
-            REFUTE: Scientific evidence contradicts this statement  
-            NOT_ENOUGH_INFO: Insufficient scientific evidence  
-            Output: {{ "SUPPORT": 0.0, "REFUTE": 1.0, "NOT_ENOUGH_INFO": 0.0 }}
-
-            ---
-
-            Example 2:  
-            Statement: "Climate change is contributing to more frequent and intense heatwaves."  
-            SUPPORT: Scientific evidence supports this statement  
-            REFUTE: Scientific evidence contradicts this statement  
-            NOT_ENOUGH_INFO: Insufficient scientific evidence  
-            Output: {{ "SUPPORT": 0.8, "REFUTE": 0.15, "NOT_ENOUGH_INFO": 0.05 }}
-
-            ---
-
-            Example 3:  
-            Statement: "A large number of people are worried about the rising sea levels."  
-            SUPPORT: Scientific evidence supports this statement  
-            REFUTE: Scientific evidence contradicts this statement  
-            NOT_ENOUGH_INFO: Insufficient scientific evidence  
-            Output: {{ "SUPPORT": 0.0, "REFUTE": 0.0, "NOT_ENOUGH_INFO": 1.0 }}
-
-            ---
-
-            Example 4:  
-            Statement: "Some scientists believe solar activity is the primary cause of recent global warming."  
-            SUPPORT: Scientific evidence supports this statement  
-            REFUTE: Scientific evidence contradicts this statement  
-            NOT_ENOUGH_INFO: Insufficient scientific evidence  
-            Output: {{ "SUPPORT": 0.2, "REFUTE": 0.7, "NOT_ENOUGH_INFO": 0.1 }}
-
-            ---
-
-            Now analyze the following statement:
-
-            Statement: "{text}"
-
-            SUPPORT: Scientific evidence supports this statement  
-            REFUTE: Scientific evidence contradicts this statement  
-            NOT_ENOUGH_INFO: Insufficient scientific evidence
-
-            Format: {{ "SUPPORT": 0.X, "REFUTE": 0.X, "NOT_ENOUGH_INFO": 0.X }}
-            """
-
-            response = self.gemini_model.generate_content(prompt)
-            
-            # Extract JSON more reliably
-            import re
-            text_response = response.text
-            
-            # Try multiple patterns to find JSON
-            patterns = [
-                r'\{[^{}]*"SUPPORT"[^{}]*\}',
-                r'\{.*?"SUPPORT".*?\}',
-                r'"SUPPORT":\s*[\d.]+.*?"REFUTE":\s*[\d.]+.*?"NOT_ENOUGH_INFO":\s*[\d.]+'
-            ]
-            
-            result = None
-            for pattern in patterns:
-                match = re.search(pattern, text_response, re.DOTALL | re.IGNORECASE)
-                if match:
-                    try:
-                        # Clean up the match and try to parse
-                        json_str = match.group(0)
-                        if not json_str.startswith('{'):
-                            json_str = '{' + json_str + '}'
-                        result = json.loads(json_str)
-                        break
-                    except:
-                        continue
-            
-            if result and all(key in result for key in ["SUPPORT", "REFUTE", "NOT_ENOUGH_INFO"]):
-                # Normalize scores
-                total = sum(result[key] for key in ["SUPPORT", "REFUTE", "NOT_ENOUGH_INFO"])
-                if total > 0:
-                    for key in ["SUPPORT", "REFUTE", "NOT_ENOUGH_INFO"]:
-                        result[key] = result[key] / total
-                    
-                    logger.info(f"Gemini: S:{result['SUPPORT']:.2f} R:{result['REFUTE']:.2f} N:{result['NOT_ENOUGH_INFO']:.2f}")
-                    return result
-            
-            return self.get_default_scores("Gemini parse failed")
-            
-        except Exception as e:
-            logger.error(f"Gemini prediction error: {e}")
-            return self.get_default_scores("Gemini error")
-
-    def get_model_prediction(self, text: str) -> Dict[str, Any]:
-        """Get model prediction with proper shape handling"""
+    def get_model_prediction(self, preprocessed_text: str) -> Dict[str, Any]:
+        """
+        Get binary model prediction (SUPPORT/REFUTE)
+        Uses PREPROCESSED text for consistent training/inference
+        """
         try:
             if not self.trained_model or not self.tokenizer:
-                return self.get_default_scores("Model unavailable")
+                return {
+                    "SUPPORT": 0.5,
+                    "REFUTE": 0.5,
+                    "reasoning": "Model unavailable"
+                }
+            
+            logger.info(f"🔧 Model input (preprocessed): '{preprocessed_text}'")
             
             inputs = self.tokenizer(
-                text, 
+                preprocessed_text, 
                 return_tensors="pt", 
                 truncation=True, 
                 padding=True,
@@ -354,7 +528,7 @@ class ClimateDetectionPipeline:
                 logits = outputs.logits
                 probs = torch.nn.functional.softmax(logits, dim=-1)
                 
-                # Handle different output shapes properly
+                # Handle different output shapes
                 if probs.dim() > 1:
                     probs = probs.squeeze()
                 
@@ -368,307 +542,279 @@ class ClimateDetectionPipeline:
                 
                 # Handle different numbers of output classes
                 if len(probs_np) == 2:
-                    # Binary classification - assume 0=REFUTE, 1=SUPPORT
+                    # Perfect - binary classification
                     result = {
-                        "SUPPORT": float(probs_np[1]),
-                        "REFUTE": float(probs_np[0]),
-                        "NOT_ENOUGH_INFO": 0.1
+                        "SUPPORT": float(probs_np[1]),  # Assuming index 0 is SUPPORT
+                        "REFUTE": float(probs_np[0])   # Assuming index 1 is REFUTE
                     }
+                    
                 elif len(probs_np) == 3:
-                    # Perfect - 3 classes as expected
+                    # Legacy 3-class model - combine NOT_ENOUGH_INFO with lower confidence class
+                    support_score = float(probs_np[1])
+                    refute_score = float(probs_np[0])
+                    neutral_score = float(probs_np[2])
+                    
+                    # Distribute neutral score proportionally
+                    if support_score >= refute_score:
+                        support_score += neutral_score * 0.3
+                        refute_score += neutral_score * 0.7
+                    else:
+                        support_score += neutral_score * 0.7
+                        refute_score += neutral_score * 0.3
+                    
                     result = {
-                        "SUPPORT": float(probs_np[0]),
-                        "REFUTE": float(probs_np[1]),
-                        "NOT_ENOUGH_INFO": float(probs_np[2])
-                    }
-                elif len(probs_np) == 1:
-                    # Single output - treat as confidence
-                    conf = float(probs_np[0])
-                    result = {
-                        "SUPPORT": conf,
-                        "REFUTE": 1.0 - conf,
-                        "NOT_ENOUGH_INFO": 0.1
+                        "SUPPORT": support_score,
+                        "REFUTE": refute_score
                     }
                 else:
-                    # Unexpected number of classes
                     logger.warning(f"Unexpected model output size: {len(probs_np)}")
-                    return self.get_default_scores("Unexpected model output")
+                    return {
+                        "SUPPORT": 0.5,
+                        "REFUTE": 0.5,
+                        "reasoning": "Unexpected model output"
+                    }
+                logger.info(f"🔧 Raw probabilities: SUPPORT={result['SUPPORT']:.3f}, REFUTE={result['REFUTE']:.3f}")
                 
                 # Normalize to ensure sum = 1.0
                 total = sum(result.values())
                 if total > 0:
                     for key in result:
                         result[key] = result[key] / total
+                # DEBUG: Log after normalization
+                logger.info(f"🔧 After normalization: SUPPORT={result['SUPPORT']:.3f}, REFUTE={result['REFUTE']:.3f}")
+        
                 
-                logger.info(f"BERT: S:{result['SUPPORT']:.2f} R:{result['REFUTE']:.2f} N:{result['NOT_ENOUGH_INFO']:.2f}")
+                logger.info(f"Model: SUPPORT:{result['SUPPORT']:.2f} REFUTE:{result['REFUTE']:.2f}")
                 return result
             
         except Exception as e:
             logger.error(f"Model prediction error: {e}")
-            return self.get_default_scores("Model error")
+            return {
+                "SUPPORT": 0.5,
+                "REFUTE": 0.5,
+                "reasoning": f"Model error: {str(e)}"
+            }
 
-    def combine_predictions(self, gemini_pred: Dict, model_pred: Dict) -> Dict[str, Any]:
-        """Combine predictions safely
-        Current approach is to average the scores from Gemini and the fine-tuned model.
-        This can be adjusted based on performance and requirements.
+    def get_transformer_explanation(self, original_text: str, prediction: Dict) -> Tuple[List[Dict], str]:
+        """
+        Generate explanation using Transformer Interpret for binary classification
+        Uses ORIGINAL text for explanation generation (more natural for users)
         """
         try:
-            combined = {
-                "SUPPORT": (gemini_pred["SUPPORT"] + model_pred["SUPPORT"]) / 2,
-                "REFUTE": (gemini_pred["REFUTE"] + model_pred["REFUTE"]) / 2,
-                "NOT_ENOUGH_INFO": (gemini_pred["NOT_ENOUGH_INFO"] + model_pred["NOT_ENOUGH_INFO"]) / 2
-            }
-            
-            final_class = max(combined, key=combined.get)
-            confidence = combined[final_class]
-            
-            logger.info(f"Ensemble: {final_class} ({confidence:.2%})")
-            
-            return {
-                "prediction": final_class,
-                "confidence": float(confidence),
-                "scores": combined
-            }
-            
-        except Exception as e:
-            logger.error(f"Ensemble error: {e}")
-            return {
-                "prediction": "NOT_ENOUGH_INFO",
-                "confidence": 0.34,
-                "scores": self.get_default_scores("Ensemble error")
-            }
-
-    def get_transformer_explanation(self, text: str, prediction: Dict) -> Tuple[List[Dict], str]:
-        """Generate explanation using Transformer Interpret with subword merging and thresholding"""
-        try:
             if not self.transformer_explainer:
-                logger.info("Transformer Interpret: Not available - explainer not initialized")
+                logger.info("Transformer Interpret: Not available")
                 return [], "Transformer explanation not available."
             
-            logger.info(f"Transformer Interpret: Starting analysis for prediction '{prediction['prediction']}'")
+            # Map prediction to class name
+            target_class = "SUPPORT" if prediction['prediction'] == "SUPPORT" else "REFUTE"
             
-            # Get word attributions using integrated gradients
+            logger.info(f"Transformer Interpret: Analyzing for '{target_class}' using original text")
+            
+            # Get word attributions using ORIGINAL text
             raw_attributions = self.transformer_explainer(
-                text,
-                class_name=prediction['prediction'],  
+                original_text,
+                class_name=target_class,
                 internal_batch_size=1
             )
             
-            logger.info(f"🔍 Raw attributions received: {len(raw_attributions)} tokens")
+            # Process attributions (merge subwords, filter important tokens)
+            processed_attributions = self._process_attributions(raw_attributions)
             
-            # Merge subwords and aggregate scores
-            merged_tokens = []
-            merged_scores = []
-            current_token = ""
-            current_score = 0.0
+            # Generate explanation using ORIGINAL text
+            explanation = self._format_binary_explanation(original_text, processed_attributions, prediction)
             
-            for token, score in raw_attributions:
-                if token.startswith("##"):
-                    # This is a subword continuation
-                    current_token += token[2:]  # Remove ##
-                    current_score += score
-                else:
-                    # New word - save previous if exists
-                    if current_token:
-                        merged_tokens.append(current_token)
-                        merged_scores.append(current_score)
-                    current_token = token
-                    current_score = score
-            
-            # Add the last token
-            if current_token:
-                merged_tokens.append(current_token)
-                merged_scores.append(current_score)
-            
-            logger.info(f"🔍 After subword merging: {len(merged_tokens)} words")
-            
-            # Calculate dynamic threshold
-            positive_scores = [s for s in merged_scores if s > 0]
-            negative_scores = [s for s in merged_scores if s < 0]
-            
-            if positive_scores:
-                mean_positive = np.mean(positive_scores)
-                std_positive = np.std(positive_scores) if len(positive_scores) > 1 else 0
-                positive_threshold = mean_positive + 0.5 * std_positive
-            else:
-                positive_threshold = 0
-            
-            if negative_scores:
-                mean_negative = np.mean(negative_scores)
-                std_negative = np.std(negative_scores) if len(negative_scores) > 1 else 0
-                negative_threshold = mean_negative - 0.5 * std_negative  # More negative
-            else:
-                negative_threshold = 0
-            
-            logger.info(f"Threshold Analysis:")
-            logger.info(f"   • Positive scores: {len(positive_scores)} words, mean={mean_positive:.3f}, std={std_positive:.3f}" if positive_scores else "   • No positive scores")
-            logger.info(f"   • Positive threshold: {positive_threshold:.3f}")
-            logger.info(f"   • Negative scores: {len(negative_scores)} words, mean={mean_negative:.3f}, std={std_negative:.3f}" if negative_scores else "   • No negative scores")
-            logger.info(f"   • Negative threshold: {negative_threshold:.3f}")
-            
-            # Filter important tokens based on thresholds
-            important_positive = [
-                (token, score) for token, score in zip(merged_tokens, merged_scores) 
-                if score > positive_threshold
-            ]
-            
-            important_negative = [
-                (token, score) for token, score in zip(merged_tokens, merged_scores) 
-                if score < negative_threshold
-            ]
-            
-            # Fallback: If no tokens pass threshold, show top tokens
-            if not important_positive and positive_scores:
-                sorted_positive = sorted(
-                    [(token, score) for token, score in zip(merged_tokens, merged_scores) if score > 0],
-                    key=lambda x: x[1], reverse=True
-                )
-                important_positive = sorted_positive[:2]
-                logger.info(" No tokens passed positive threshold, using top 2 positive")
-            
-            if not important_negative and negative_scores:
-                sorted_negative = sorted(
-                    [(token, score) for token, score in zip(merged_tokens, merged_scores) if score < 0],
-                    key=lambda x: x[1]  # Most negative first
-                )
-                important_negative = sorted_negative[:2]
-                logger.info(" No tokens passed negative threshold, using top 2 negative")
-            
-            # Combine and create final attribution list
-            all_important = important_positive + important_negative
-            
-            # Format for output
-            attributions_list = []
-            for token, score in all_important:
-                attributions_list.append({
-                    "word": token,
-                    "attribution": float(score),
-                    "importance": abs(float(score)),
-                    "passed_threshold": True
-                })
-            
-            # Add some non-threshold tokens for context (top remaining by absolute value)
-            remaining_tokens = [
-                (token, score) for token, score in zip(merged_tokens, merged_scores)
-                if (token, score) not in all_important
-            ]
-            remaining_sorted = sorted(remaining_tokens, key=lambda x: abs(x[1]), reverse=True)
-            
-            for token, score in remaining_sorted[:3]:  # Add top 3 remaining
-                attributions_list.append({
-                    "word": token,
-                    "attribution": float(score),
-                    "importance": abs(float(score)),
-                    "passed_threshold": False
-                })
-            
-            # Sort final list by importance
-            attributions_list.sort(key=lambda x: x["importance"], reverse=True)
-            
-            # Log the results
-            threshold_passed = [attr for attr in attributions_list if attr["passed_threshold"]]
-            threshold_failed = [attr for attr in attributions_list if not attr["passed_threshold"]]
-            
-            logger.info(f"Transformer Interpret Results:")
-            logger.info(f"   • Total words analyzed: {len(merged_tokens)}")
-            logger.info(f"   • Words passing threshold: {len(threshold_passed)}")
-            logger.info(f"   • Method: Integrated Gradients with dynamic thresholding")
-            logger.info(f"   • Target class: {prediction['prediction']}")
-            
-            if threshold_passed:
-                logger.info(f"   • Important words (above threshold):")
-                for attr in threshold_passed[:5]:
-                    logger.info(f"     - {attr['word']}: {attr['attribution']:+.3f} ✓")
-            
-            if threshold_failed and threshold_passed:
-                logger.info(f"   • Context words (below threshold):")
-                for attr in threshold_failed[:3]:
-                    logger.info(f"     - {attr['word']}: {attr['attribution']:+.3f}")
-            
-            if attributions_list:
-                max_attr = max([attr["attribution"] for attr in attributions_list])
-                min_attr = min([attr["attribution"] for attr in attributions_list])
-                logger.info(f"   • Attribution range: {min_attr:.3f} to {max_attr:.3f}")
-            
-            # Generate human-readable explanation
-            explanation_text = self._format_attribution_explanation_with_threshold(text,
-                attributions_list, prediction, positive_threshold, negative_threshold
-            )
-            
-            logger.info("Transformer Interpret: Analysis completed successfully")
-            return attributions_list[:10], explanation_text
+            return processed_attributions[:10], explanation
             
         except Exception as e:
-            logger.error(f" Transformer Interpret ERROR: {e}")
-            logger.error(f"   • Error type: {type(e).__name__}")
+            logger.error(f"Transformer Interpret ERROR: {e}")
             return [], f"Error generating explanation: {str(e)}"
 
-    def _format_attribution_explanation_with_threshold(self,text, attributions_list: List[Dict], prediction: Dict, pos_threshold: float, neg_threshold: float) -> str:
-        """Use Gemini to create user-friendly explanation from Transformer Interpret results"""
+    def _process_attributions(self, raw_attributions) -> List[Dict]:
+        # Enhanced subword merging for RoBERTa tokenization
+        merged_tokens = []
+        merged_scores = []
+        current_token = ""
+        current_score = 0.0
+        
+        logger.debug(f"Raw attributions: {raw_attributions[:10]}")  # Debug first 10
+        
+        for token, score in raw_attributions:
+            # Handle RoBERTa tokenization patterns
+            if token.startswith("##"):
+                # Standard BERT-style subword continuation
+                current_token += token[2:]
+                current_score += score
+            elif token.startswith("Ġ"):
+                # RoBERTa/GPT-style space prefix (start of new word)
+                if current_token:
+                    merged_tokens.append(current_token)
+                    merged_scores.append(current_score)
+                current_token = token[1:]  # Remove the Ġ prefix
+                current_score = score
+            elif len(token) == 1 and token.isalpha() and current_token:
+                # Single character that might be part of previous word
+                current_token += token
+                current_score += score
+            elif current_token and not token.startswith("<") and not token.startswith("["):
+                # Continuation of current word (no special prefix)
+                # Only if current_token exists and token isn't special
+                if len(token) <= 3 and token.isalpha():  # Short fragments likely belong to previous word
+                    current_token += token
+                    current_score += score
+                else:
+                    # Start new word
+                    merged_tokens.append(current_token)
+                    merged_scores.append(current_score)
+                    current_token = token
+                    current_score = score
+            else:
+                # Save previous token if exists
+                if current_token:
+                    merged_tokens.append(current_token)
+                    merged_scores.append(current_score)
+                # Start new token
+                current_token = token
+                current_score = score
+        
+        # Add the last token
+        if current_token:
+            merged_tokens.append(current_token)
+            merged_scores.append(current_score)
+        
+        logger.debug(f"After merging: {list(zip(merged_tokens[:10], merged_scores[:10]))}")
+        
+        # Clean up tokens - remove special tokens and very short fragments
+        cleaned_tokens = []
+        cleaned_scores = []
+        
+        for token, score in zip(merged_tokens, merged_scores):
+            # Skip special tokens and very short fragments
+            if (len(token) >= 2 and 
+                not token.startswith("<") and 
+                not token.startswith("[") and
+                not token in [".", ",", "!", "?", ":", ";", "'", '"']):
+                cleaned_tokens.append(token)
+                cleaned_scores.append(score)
+        
+        logger.debug(f"After cleaning: {list(zip(cleaned_tokens[:10], cleaned_scores[:10]))}")
+        
+        # Create attribution list
+        attributions = []
+        for token, score in zip(cleaned_tokens, cleaned_scores):
+            attributions.append({
+                "word": token,
+                "attribution": float(score),
+                "importance": abs(float(score))
+            })
+        
+        # Sort by importance
+        attributions.sort(key=lambda x: x["importance"], reverse=True)
+        
+        logger.info(f"🔍 Processed attributions: {[(attr['word'], attr['attribution']) for attr in attributions[:6]]}")
+        
+        return attributions
+
+    def _format_binary_explanation(self, original_text: str, attributions: List[Dict], prediction: Dict) -> str:
+        """Generate user-friendly explanation for binary classification using original text"""
         try:
-            if not attributions_list:
-                return "No significant word attributions found."
-            
-            # Get the most important words that passed threshold
-            threshold_passed = [attr for attr in attributions_list if attr.get("passed_threshold", False)]
-            
-            # If no words passed threshold, use top words by importance
-            if not threshold_passed:
-                threshold_passed = sorted(attributions_list, key=lambda x: x["importance"], reverse=True)[:5]
-            
-            # Format words with scores for Gemini prompt
-            transformer_words_str = ", ".join([
-                f"{attr['word']} ({attr['attribution']:+.2f})" 
-                for attr in threshold_passed[:8]  # Top 8 most important
-            ])
-            
-            if self.gemini_model and transformer_words_str:
+            if self.gemini_model and attributions:
+                # Apply threshold filtering for meaningful words
+                meaningful_threshold = 0.1  # Only words with |attribution| > 0.1
+                meaningful_words = [
+                    attr for attr in attributions 
+                    if attr["importance"] > meaningful_threshold
+                ]
+                
+                # If no words pass threshold, use top 3 most important
+                if not meaningful_words:
+                    meaningful_words = sorted(attributions, key=lambda x: x["importance"], reverse=True)[:3]
+                    logger.info(f"No words passed threshold {meaningful_threshold}, using top 3")
+                else:
+                    logger.info(f"Found {len(meaningful_words)} words above threshold {meaningful_threshold}")
+                
+                # Limit to top 6 even after threshold filtering
+                top_meaningful = meaningful_words[:6]
+                
+                words_str = ", ".join([
+                    f"{attr['word']} ({attr['attribution']:+.2f})" 
+                    for attr in top_meaningful
+                ])
+                
+                classification = "TRUTHFUL" if prediction['prediction'] == "SUPPORT" else "MISINFORMATION"
+                confidence = prediction['confidence']
+                logger.info(f"Classification: {classification}, Confidence: {confidence * 100:.1f}%") 
+                
+                logger.info(f"Passing to Gemini: {words_str}")
+                
                 prompt = f"""
-The model classified the following statement as **{prediction['prediction']}** with {prediction['confidence']:.1f}% confidence.
+                The model classified the following statement as **{prediction['prediction']}** with {confidence * 100:.1f}% confidence.
 
-Statement: "{text}"
+                Statement: "{original_text}"
 
-Here are the key influential words and their influence scores on the model's prediction:
-{transformer_words_str}
+                Here are the key influential words and their influence scores on the model's prediction:
+                {words_str}
 
-Note: Positive scores indicate words that support the predicted class, while negative scores indicate words that oppose it. The magnitude of the score reflects the strength of the influence.
+                Note: Positive scores indicate words that support the predicted class, while negative scores indicate words that oppose it. The magnitude of the score reflects the strength of the influence.
 
-Using this information, briefly explain why the model likely made this prediction based on these words and their scores. 
-Ignore trivial or generic terms, and keep the explanation faithful to the sentence's meaning.
+                Using this information, briefly explain why the model likely made this prediction based on these words and their scores. 
+                Ignore trivial or generic terms, and keep the explanation faithful to the sentence's meaning.
 
-Then, write a short follow-up sentence that adds helpful scientific context or clarification related to the topic.
-This may include a real-world implication, fact, or environmental insight that helps the user understand the statement more fully.
-Keep everything concise and accurate.
-"""
+                Then, write a short follow-up sentence that adds helpful scientific context or clarification related to the topic.
+                This may include a real-world implication, fact, or environmental insight that helps the user understand the statement more fully.
+                Keep everything concise and accurate.
+                """
                 
                 response = self.gemini_model.generate_content(prompt)
-                explanation = response.text.strip()
-                logger.info("User-friendly explanation generated from Transformer Interpret results")
-                return explanation
+                return response.text.strip()
             
         except Exception as e:
             logger.error(f"Explanation generation error: {e}")
         
         # Fallback explanation
-        pred_class = prediction['prediction']
+        classification = "truthful based on climate science evidence" if prediction['prediction'] == "SUPPORT" else "misinformation contradicted by climate science evidence"
         confidence = prediction['confidence']
-        return f"The AI ensemble classified this statement as {pred_class} with {confidence:.1%} confidence. This assessment is based on patterns learned from climate science literature and training data."
+        return f"This statement was classified as {classification} with {confidence* 100:.1f} confidence by our trained climate misinformation detection model."
 
-    def get_explanation(self, text: str, prediction: Dict) -> Tuple[str, List[Dict]]:
-        """Get comprehensive explanation combining Transformer Interpret and Gemini"""
-        # Add original text to prediction for context
-        prediction['original_text'] = text
-        
-        # Get Transformer Interpret explanation
-        word_attributions, transformer_explanation = self.get_transformer_explanation(text, prediction)
-        
-        return transformer_explanation, word_attributions
+    def get_explanation_and_attributions(self, original_text: str, prediction: Dict) -> Tuple[str, List[Dict]]:
+        """Get comprehensive explanation and word attributions using original text"""
+        word_attributions, explanation = self.get_transformer_explanation(original_text, prediction)
+        return explanation, word_attributions
+
+    def preprocess_for_model(self, original_text: str) -> Tuple[str, Dict[str, str]]:
+        """
+        Preprocess text for model input and return both processed text and debug info
+        """
+        try:
+            # Apply preprocessing pipeline
+            preprocessed_text = self.text_preprocessor.preprocess_text(original_text)
+            
+            # Create debug info
+            preprocessing_info = {
+                "original": original_text,
+                "preprocessed": preprocessed_text,
+                "preprocessing_applied": "Text normalization, lowercasing, stopword removal, lemmatization"
+            }
+            
+            logger.info(f"📝 Preprocessing applied:")
+            logger.info(f"   Original: '{original_text}'")
+            logger.info(f"   Preprocessed: '{preprocessed_text}'")
+            
+            return preprocessed_text, preprocessing_info
+            
+        except Exception as e:
+            logger.error(f"Preprocessing error: {e}")
+            # Return original text if preprocessing fails
+            return original_text, {
+                "original": original_text,
+                "preprocessed": original_text,
+                "preprocessing_applied": f"Error during preprocessing: {str(e)}"
+            }
 
 
-# Basic endpoints
+# API Endpoints
 @app.get("/")
 async def root():
-    return {"message": "Climate Detection API", "status": "running"}
+    return {"message": "Climate Misinformation Detection API v2.1 - With Preprocessing", "status": "running"}
 
 @app.get("/health")
 async def health_check():
@@ -681,55 +827,79 @@ async def health_check():
         "status": "healthy",
         "components": {
             "gemini": pipeline.gemini_model is not None,
-            "bert_model": pipeline.trained_model is not None,
+            "binary_model": pipeline.trained_model is not None,
             "transformer_interpret": pipeline.transformer_explainer is not None,
-            "transformer_interpret_available": TRANSFORMER_INTERPRET_AVAILABLE
-        }
+            "transformer_interpret_available": TRANSFORMER_INTERPRET_AVAILABLE,
+            "text_preprocessor": pipeline.text_preprocessor is not None
+        },
+        "version": "2.1 - With Text Preprocessing Pipeline"
     }
 
 @app.post("/detect", response_model=DetectionResult)
 async def detect_misinformation(request: QueryRequest):
-    """Main detection endpoint"""
+    """Main detection endpoint with preprocessing pipeline"""
     try:
         global pipeline
         
         if not pipeline:
             raise HTTPException(status_code=503, detail="Pipeline not ready")
         
-        text = request.text.strip()
+        original_text = request.text.strip()
         
-        if not text:
+        if not original_text:
             raise HTTPException(status_code=400, detail="Text cannot be empty")
         
-        logger.info(f"Analyzing: {text}")
+        logger.info(f"🎯 Analyzing: {original_text}")
         
-        # Domain check
-        is_climate_related = pipeline.check_climate_domain(text)
+        # Stage 1 & 2: Domain check + Completeness check using ORIGINAL text
+        combined_result = pipeline.check_climate_domain_and_completeness(original_text)
         
-        if not is_climate_related:
+        if not combined_result["is_climate_related"]:
             return DetectionResult(
                 is_climate_related=False,
-                final_result={"message": "Not climate-related"}
+                status="out_of_domain"
             )
         
-        # Get predictions
-        gemini_pred = pipeline.get_gemini_prediction(text)
-        model_pred = pipeline.get_model_prediction(text)
+        if not combined_result["is_complete"]:
+            return DetectionResult(
+                is_climate_related=True,
+                is_complete_statement=False,
+                completeness_guidance=combined_result["guidance"],
+                status="incomplete_statement"
+            )
         
-        # Combine predictions
-        final_result = pipeline.combine_predictions(gemini_pred, model_pred)
+        # Stage 3: Preprocess text for model input
+        preprocessed_text, preprocessing_info = pipeline.preprocess_for_model(original_text)
         
-        # Get explanations and word attributions
-        explanation, word_attributions = pipeline.get_explanation(text, final_result)
+        # Stage 4: Model prediction using PREPROCESSED text
+        model_prediction = pipeline.get_model_prediction(preprocessed_text)
+        # DEBUG: Log model prediction
+        logger.info(f"🔧 Model prediction: {model_prediction}")
+        
+        # Use only model prediction as final result
+        final_result = {
+            "prediction": "SUPPORT" if model_prediction["SUPPORT"] > model_prediction["REFUTE"] else "REFUTE",
+            "confidence": float(max(model_prediction["SUPPORT"], model_prediction["REFUTE"])),
+            "support_score": float(model_prediction["SUPPORT"]),
+            "refute_score": float(model_prediction["REFUTE"])
+        }
+        # DEBUG: Log final result
+        logger.info(f"🔧 Final result: {final_result}")
+        logger.info(f"🔧 Final confidence: {final_result['confidence']}")
+        
+        # Stage 5: Get explanations and word attributions using ORIGINAL text
+        explanation, word_attributions = pipeline.get_explanation_and_attributions(original_text, final_result)
         
         return DetectionResult(
             is_climate_related=True,
-            gemini_prediction=gemini_pred,
-            model_prediction=model_pred,
+            is_complete_statement=True,
+            model_prediction=model_prediction,
             final_result=final_result,
             explanation=explanation,
             confidence=final_result["confidence"],
-            word_attributions=word_attributions
+            word_attributions=word_attributions,
+            status="complete_analysis",
+            preprocessing_info=preprocessing_info  # Include preprocessing debug info
         )
     
     except HTTPException:
@@ -742,11 +912,18 @@ async def detect_misinformation(request: QueryRequest):
 async def startup_event():
     global pipeline
     try:
-        logger.info("Starting Climate Detection API...")
+        logger.info("Starting Climate Misinformation Detection API v2.1 - With Preprocessing...")
+        
+        # Initialize NLTK data during startup (after app is ready)
+        initialize_nltk()
+        
+        # Initialize the pipeline
         pipeline = ClimateDetectionPipeline()
         logger.info("API ready!")
     except Exception as e:
         logger.error(f"Startup failed: {e}")
+        # Continue even if some components fail
+        logger.info("API starting with limited functionality...")
 
 if __name__ == "__main__":
     import uvicorn

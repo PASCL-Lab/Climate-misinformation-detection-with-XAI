@@ -2,19 +2,337 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <link rel="stylesheet" href="popup.css">
+  <style>
+    body {
+      width: 450px;
+      min-height: 500px;
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 80%);
+      color: white;
+      box-sizing: border-box;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .header p {
+      margin: 8px 0 0 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .input-section {
+      margin-bottom: 20px;
+    }
+
+    .input-section label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: 500;
+      font-size: 15px;
+    }
+
+    .input-section textarea {
+      width: 100%;
+      height: 100px;
+      padding: 15px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.95);
+      color: #333;
+      line-height: 1.4;
+      margin-bottom: 15px;
+    }
+
+    .input-section textarea:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .btn {
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      flex: 2;
+      background: #4CAF50;
+      color: white;
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: #45a049;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
+    }
+
+    .btn-secondary {
+      flex: 1;
+      background: #ff9800;
+      color: white;
+      box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+    }
+
+    .btn-secondary:hover {
+      background: #f57c00;
+      transform: translateY(-2px);
+    }
+
+    .btn-clear {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-clear:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 15px;
+      margin: 15px 0;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      margin: 0 auto 15px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .results {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 20px;
+      margin-top: 20px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .top-summary-box {
+      background: rgba(255, 255, 255, 0.95);
+      color: #333;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    .top-summary-box .result-classification {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .top-summary-box .overall-confidence {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 8px 0;
+    }
+
+    .result-classification.truthful {
+      color: #4CAF50;
+    }
+
+    .result-classification.misinformation {
+      color: #f44336;
+    }
+
+    .confidence-section {
+      margin: 25px 0;
+    }
+
+    .confidence-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .confidence-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    .confidence-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .confidence-label {
+      width: 100px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .confidence-bar {
+      flex: 1;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      border-radius: 10px;
+      transition: width 1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .confidence-fill.truthful {
+      background: linear-gradient(90deg, #4CAF50, #66BB6A);
+    }
+
+    .confidence-fill.misinformation {
+      background: linear-gradient(90deg, #f44336, #EF5350);
+    }
+
+    .explanation-section {
+      margin-top: 20px;
+    }
+
+    .explanation-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .explanation-content {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+      border-left: 3px solid rgba(255, 255, 255, 0.4);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .error {
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid rgba(244, 67, 54, 0.5);
+      color: #ffebee;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .out-of-domain {
+      background: rgba(255, 152, 0, 0.2);
+      border: 1px solid rgba(255, 152, 0, 0.5);
+      color: #fff3e0;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .incomplete-statement {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+      color: #e3f2fd;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .incomplete-statement h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #81d4fa;
+    }
+
+    .incomplete-statement .guidance {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-style: italic;
+      line-height: 1.5;
+      text-align: left;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
 </head>
 <body>
   <div class="header">
     <h1>🌍 Climate Fact Checker</h1>
-    <p> Climate misinformation detection tool with XAI</p>
+    <p>AI-powered climate misinformation detection</p>
   </div>
 
   <div id="inputSection" class="input-section">
     <label for="statementInput">Enter a statement to analyze:</label>
     <textarea 
       id="statementInput" 
-      placeholder="e.g., 'Global warming is a hoax created by scientists to get funding' or 'Rising CO2 levels are causing ocean acidification'">
+      placeholder="e.g., 'Global warming stopped in 1998' or 'Rising sea levels are threatening coastal cities worldwide'">
     </textarea>
     
     <div class="button-group">
@@ -30,6 +348,7 @@
     <p>Analyzing...</p>
   </div>
 
+  <!-- Complete Analysis Results -->
   <div id="results" class="results hidden">
     <div class="top-summary-box">
       <div id="resultClassification" class="result-classification">Analysis Result</div>
@@ -37,25 +356,19 @@
     </div>
 
     <div class="confidence-section">
-      <div class="confidence-title">Confidence Breakdown</div>
+      <div class="confidence-title">Evidence Analysis</div>
       
       <div class="confidence-bars">
         <div class="confidence-item">
-          <div class="confidence-label">Supports</div>
+          <div class="confidence-label">Support</div>
           <div class="confidence-bar">
-            <div id="supportFill" class="confidence-fill support">0%</div>
+            <div id="supportFill" class="confidence-fill truthful">0%</div>
           </div>
         </div>
         <div class="confidence-item">
-          <div class="confidence-label">Refutes</div>
+          <div class="confidence-label">Refute</div>
           <div class="confidence-bar">
-            <div id="refuteFill" class="confidence-fill refute">0%</div>
-          </div>
-        </div>
-        <div class="confidence-item">
-          <div class="confidence-label">Insufficient</div>
-          <div class="confidence-bar">
-            <div id="uncertainFill" class="confidence-fill not_enough_info">0%</div>
+            <div id="refuteFill" class="confidence-fill misinformation">0%</div>
           </div>
         </div>
       </div>
@@ -69,13 +382,24 @@
     </div>
   </div>
 
-  <div id="outOfDomain" class="out-of-domain hidden">
-    <h3> Out of Domain</h3>
-    <p>This statement doesn't appear to be related to climate change. This tool is specifically trained to analyze climate science claims.</p>
+  <!-- Incomplete Statement -->
+  <div id="incompleteStatement" class="incomplete-statement hidden">
+    <h3>🔍 Need More Information</h3>
+    <p>Your statement needs more specific details for accurate analysis.</p>
+    <div id="guidanceContent" class="guidance">
+      Additional context required...
+    </div>
   </div>
 
+  <!-- Out of Domain -->
+  <div id="outOfDomain" class="out-of-domain hidden">
+    <h3>⚠️ Out of Domain</h3>
+    <p>This statement doesn't appear to be related to climate change. This tool is specifically designed to analyze climate science claims.</p>
+  </div>
+
+  <!-- Error -->
   <div id="error" class="error hidden">
-    <h3> Error</h3>
+    <h3>❌ Error</h3>
     <p id="errorMessage">Something went wrong. Please try again.</p>
   </div>
 

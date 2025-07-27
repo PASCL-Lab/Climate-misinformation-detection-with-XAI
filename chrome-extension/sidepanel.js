@@ -8,6 +8,7 @@ const selectTextBtn = document.getElementById('selectTextBtn');
 const statusIndicator = document.getElementById('statusIndicator');
 const loading = document.getElementById('loading');
 const results = document.getElementById('results');
+const incompleteStatement = document.getElementById('incompleteStatement');
 const outOfDomain = document.getElementById('outOfDomain');
 const error = document.getElementById('error');
 const errorMessage = document.getElementById('errorMessage');
@@ -17,8 +18,8 @@ const resultClassification = document.getElementById('resultClassification');
 const overallConfidence = document.getElementById('overallConfidence');
 const supportFill = document.getElementById('supportFill');
 const refuteFill = document.getElementById('refuteFill');
-const uncertainFill = document.getElementById('uncertainFill');
 const explanationContent = document.getElementById('explanationContent');
+const guidanceContent = document.getElementById('guidanceContent');
 
 // State
 let isSelectionMode = false;
@@ -393,13 +394,45 @@ function displayResults(data) {
   
   hideAllResults();
   
-  if (!data.is_climate_related) {
-    debugLog('Statement not climate-related');
-    outOfDomain.classList.remove('hidden');
-    return;
+  // Handle different response statuses
+  switch (data.status) {
+    case 'out_of_domain':
+      debugLog('Statement not climate-related');
+      outOfDomain.classList.remove('hidden');
+      return;
+      
+    case 'incomplete_statement':
+      debugLog('Statement incomplete');
+      showIncompleteStatement(data.completeness_guidance);
+      return;
+      
+    case 'complete_analysis':
+      debugLog('Complete analysis received');
+      showCompleteAnalysis(data);
+      return;
+      
+    default:
+      debugLog('Unknown status:', data.status);
+      showError('Unexpected response format');
+      return;
+  }
+}
+
+function showIncompleteStatement(guidance) {
+  debugLog('Showing incomplete statement guidance:', guidance);
+  
+  if (guidance) {
+    guidanceContent.textContent = guidance;
+  } else {
+    guidanceContent.textContent = "Please provide more specific details about the conditions, location, timeframe, or context for accurate analysis.";
   }
   
-  // Check if we have final_result
+  incompleteStatement.classList.remove('hidden');
+}
+
+function showCompleteAnalysis(data) {
+  debugLog('Showing complete analysis:', data);
+  
   if (!data.final_result) {
     debugLog('ERROR: No final_result in response data');
     showError('Invalid response format - missing final_result');
@@ -407,26 +440,16 @@ function displayResults(data) {
   }
   
   const finalResult = data.final_result;
-  debugLog('Final result extracted:', finalResult);
-  
   const prediction = finalResult.prediction;
   const confidence = finalResult.confidence;
-  const scores = finalResult.scores;
-  debugLog('Scores extracted:', scores);
   
-  debugLog('Extracted values:', { prediction, confidence, scores });
+  debugLog('Extracted values:', { prediction, confidence });
   
-  if (!scores) {
-    debugLog('ERROR: No scores in final_result');
-    showError('Invalid response format - missing scores');
-    return;
-  }
-  
-  // Update main classification
+  // Update main classification with new messaging
   updateClassification(prediction, confidence);
   
-  // Update confidence visualizations
-  updateConfidenceVisuals(scores);
+  // Update confidence visualizations for binary classification
+  updateBinaryConfidenceVisuals(finalResult);
   
   // Update explanation
   updateExplanation(data.explanation);
@@ -441,55 +464,38 @@ function displayResults(data) {
 function updateClassification(prediction, confidence) {
   debugLog('updateClassification called', { prediction, confidence });
   
-  const classifications = {
-    'SUPPORT': {
-      text: 'Evidence Supports This Statement',
-      class: 'support'
-    },
-    'REFUTE': {
-      text: 'Evidence Refutes This Statement', 
-      class: 'refute'
-    },
-    'NOT_ENOUGH_INFO': {
-      text: 'Insufficient Evidence Available',
-      class: 'not_enough_info'
-    }
-  };
+  let classificationText, classificationClass;
   
-  const classInfo = classifications[prediction] || {
-    text: 'Analysis Complete',
-    class: 'not_enough_info'
-  };
+  if (prediction === 'SUPPORT') {
+    classificationText = 'Statement is TRUTHFUL';
+    classificationClass = 'truthful';
+  } else { // REFUTE
+    classificationText = 'Statement is MISINFORMATION';
+    classificationClass = 'misinformation';
+  }
   
-  debugLog('Classification info:', classInfo);
+  debugLog('Classification info:', { classificationText, classificationClass });
   
-  resultClassification.textContent = classInfo.text;
-  resultClassification.className = `result-classification ${classInfo.class}`;
+  resultClassification.textContent = classificationText;
+  resultClassification.className = `result-classification ${classificationClass}`;
   
   overallConfidence.textContent = `${(confidence * 100).toFixed(1)}% Confidence`;
   
   debugLog('Classification UI updated');
 }
 
-function updateConfidenceVisuals(scores) {
-  debugLog('updateConfidenceVisuals called with scores:', scores);
+function updateBinaryConfidenceVisuals(finalResult) {
+  debugLog('updateBinaryConfidenceVisuals called with finalResult:', finalResult);
   
-  // Validate scores object
-  const requiredKeys = ['SUPPORT', 'REFUTE', 'NOT_ENOUGH_INFO'];
-  for (const key of requiredKeys) {
-    if (!(key in scores)) {
-      debugLog(`ERROR: Missing score key: ${key}`);
-      showError(`Invalid scores format - missing ${key}`);
-      return;
-    }
-  }
+  // For binary classification, we have support_score and refute_score
+  const supportScore = finalResult.support_score || 0;
+  const refuteScore = finalResult.refute_score || 0;
   
-  debugLog('Scores validation passed');
+  debugLog('Binary scores:', { supportScore, refuteScore });
   
   // Update progress bars with staggered animation
-  setTimeout(() => updateProgressBar(supportFill, scores.SUPPORT), 200);
-  setTimeout(() => updateProgressBar(refuteFill, scores.REFUTE), 400);
-  setTimeout(() => updateProgressBar(uncertainFill, scores.NOT_ENOUGH_INFO), 600);
+  setTimeout(() => updateProgressBar(supportFill, supportScore), 200);
+  setTimeout(() => updateProgressBar(refuteFill, refuteScore), 400);
 }
 
 function updateProgressBar(element, value) {
@@ -544,7 +550,7 @@ function updateExplanation(explanation) {
     explanationContent.innerHTML = `
       <em>No detailed explanation available for this analysis.</em>
       <br><br>
-      The AI ensemble has provided confidence scores based on training data and analysis patterns.
+      The AI system has analyzed this statement using climate science evidence and machine learning models.
     `;
   }
   
@@ -560,6 +566,7 @@ function showError(message) {
 
 function hideAllResults() {
   results.classList.add('hidden');
+  incompleteStatement.classList.add('hidden');
   outOfDomain.classList.add('hidden');
   error.classList.add('hidden');
 }
@@ -588,7 +595,6 @@ function setLoading(isLoading) {
   }
 }
 
-
 function clearResults() {
   debugLog('clearResults called');
   
@@ -596,14 +602,14 @@ function clearResults() {
   hideAllResults();
   chrome.storage.local.remove(['lastStatement']);
   
-  // Reset progress bars
-  [supportFill, refuteFill, uncertainFill].forEach(element => {
+  // Reset progress bars (only 2 now for binary classification)
+  [supportFill, refuteFill].forEach(element => {
     element.style.width = '0%';
     element.textContent = '0%';
   });
   
   // Reset status
-  statusIndicator.textContent = 'Just a statement away from analysis!';
+  statusIndicator.textContent = 'Ready to analyze climate statements';
   statusIndicator.className = 'status-indicator status-ready';
   
   statementInput.focus();
