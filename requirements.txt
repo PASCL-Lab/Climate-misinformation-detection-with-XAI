@@ -1,12 +1,30 @@
+# Core API dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-google-generativeai==0.3.2
-torch>=2.0.0
-transformers>=4.35.0
-numpy>=1.24.0
-shap>=0.42.0
-lime>=0.2.0.1
-scikit-learn>=1.3.0
-pydantic>=2.4.0
-python-multipart>=0.0.6
-aiofiles>=23.2.1
+pydantic==2.5.0
+python-dotenv==1.0.0
+
+# ML dependencies (CPU versions for compatibility)
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+--find-links https://download.pytorch.org/whl/torch_stable.html
+
+# Transformers and AI
+transformers==4.35.0
+google-generativeai==0.3.0
+
+# Core scientific packages
+numpy==1.24.3
+scipy==1.11.4
+scikit-learn==1.3.0
+
+# Text processing
+nltk==3.8.1
+
+# ONNX runtime
+onnxruntime==1.16.0
+
+# Explainability
+
+
+transformers-interpret==0.10.0
