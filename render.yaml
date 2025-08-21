@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: climate-detection-api
+    env: python
+    plan: free  # or starter/professional
+    buildCommand: |
+      git lfs install
+      git lfs pull
+      pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:$PORT main:app
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ONNX_MODEL_PATH
+        sync: false
+      - key: PYTORCH_MODEL_PATH
+        sync: false
