@@ -336,6 +336,43 @@
       border-left: 3px solid rgba(255, 255, 255, 0.4);
     }
 
+    .footer {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 18px;
+      margin-top: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(8px);
+    }
+
+    .footer-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      text-align: center;
+      color: #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .footer-title::before {
+      content: "💡";
+      font-size: 16px;
+    }
+
+    .footer-content {
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: left;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 3px solid rgba(255, 255, 255, 0.3);
+    }
+
     .error {
       background: rgba(244, 67, 54, 0.2);
       border: 1px solid rgba(244, 67, 54, 0.5);
@@ -394,8 +431,7 @@
 </head>
 <body>
   <div class="header">
-    <h1>🌍 Climate Fact Checker</h1>
-    <p>AI-powered climate misinformation detection</p>
+    <h1>🌍 Climate Misinformation Classifier</h1>
   </div>
 
   <div class="action-buttons">
@@ -432,17 +468,17 @@
     </div>
 
     <div class="confidence-section">
-      <div class="confidence-title">Evidence Analysis</div>
+      <div class="confidence-title">Confidence Analysis</div>
       
       <div class="confidence-bars">
         <div class="confidence-item">
-          <div class="confidence-label">Support</div>
+          <div class="confidence-label">True</div>
           <div class="confidence-bar">
             <div id="supportFill" class="confidence-fill truthful">0%</div>
           </div>
         </div>
         <div class="confidence-item">
-          <div class="confidence-label">Refute</div>
+          <div class="confidence-label">False</div>
           <div class="confidence-bar">
             <div id="refuteFill" class="confidence-fill misinformation">0%</div>
           </div>
@@ -457,6 +493,18 @@
       <div id="explanationContent" class="explanation-content">
         Loading explanation...
       </div>
+    </div>
+
+    <!-- Footer only appears with results -->
+    <div class="footer">
+      <div class="footer-title">
+        Interpretation Guide
+      </div>
+      <div id="footerContent" class="footer-content">
+        <strong>True</strong> indicates the statement is supported by scientific evidence, while <strong>False</strong> means it is contradicted by evidence. Confidence levels reflect the model's certainty based on available climate science data and peer-reviewed research it is trained on.
+      </div>
+      <div id="footerContent" class="footer-content" style="text-align: center;">
+        <strong>This tool is meant to be used for educational purposes only</strong>    
     </div>
   </div>
 
@@ -480,7 +528,11 @@
     <h3>❌ Error</h3>
     <p id="errorMessage">Something went wrong. Please try again.</p>
   </div>
+<<<<<<< HEAD
 
+=======
+  
+>>>>>>> master
   <script src="sidepanel.js"></script>
 </body>
 </html>

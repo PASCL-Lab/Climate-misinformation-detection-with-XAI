@@ -5,7 +5,11 @@ from pathlib import Path
 import json
 
 class SimpleONNXConverter:
+<<<<<<< HEAD
     def __init__(self, model_path, output_dir="./onnx_model"):
+=======
+    def __init__(self, model_path, output_dir="./onnx_model_82_BD"):
+>>>>>>> master
         self.model_path = model_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
@@ -74,8 +78,18 @@ class SimpleONNXConverter:
 
 # --------------- Run this ---------------
 if __name__ == "__main__":
+<<<<<<< HEAD
     MODEL_PATH = "backend/models/climate_bert_2_label_wch"  # Change to your actual model folder
     OUTPUT_DIR = "./onnx_model"
 
     converter = SimpleONNXConverter(MODEL_PATH, OUTPUT_DIR)
     converter.run()
+=======
+    MODEL_PATH = "backend/models/model_augv2_metric_evalloss" 
+    OUTPUT_DIR = "./onnx_models/model_augv2_metric_evalloss"
+
+    converter = SimpleONNXConverter(MODEL_PATH, OUTPUT_DIR)
+    converter.run()
+    
+    
+>>>>>>> master
