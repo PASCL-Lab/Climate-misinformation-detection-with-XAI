@@ -4,5 +4,5 @@ try.py
 backend/__pycache__/
 results/
 backend/models/
-backend/model/
+
 
