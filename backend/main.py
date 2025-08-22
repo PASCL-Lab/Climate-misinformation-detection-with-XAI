@@ -56,7 +56,7 @@ app = FastAPI(title="Climate Misinformation Detection API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://yourdomain.com", "https://climate-misinformation-detection-with-xai.onrender.com"] ,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1153,7 +1153,7 @@ async def startup_event():
         # Continue even if some components fail
         logger.info(" API starting with limited functionality...")
 
-if __name__ == "__main__":
-    import uvicorn
-    logger.info(" Starting server on http://localhost:8000")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+# if __name__ == "__main__":
+#     import uvicorn
+#     logger.info(" Starting server on http://localhost:8000")
+#     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
