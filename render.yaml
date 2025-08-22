@@ -6,6 +6,7 @@ services:
     buildCommand: |
       git lfs install
       git lfs pull
+      pip install --upgrade pip setuptools wheel
       pip install -r requirements.txt
     startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:$PORT main:app
     envVars:
@@ -19,3 +20,5 @@ services:
         sync: false
       - key: PYTORCH_MODEL_PATH
         sync: false
+    environment:
+      pythonVersion: 3.11
