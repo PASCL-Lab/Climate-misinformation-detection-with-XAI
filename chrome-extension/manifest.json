@@ -11,7 +11,7 @@
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://climate-misinformation-detection-with-xai.onrender.com",
+    "https://climate-misinformation-detection-with-xai.onrender.com/*",
     "<all_urls>"
   ],
   "action": {
