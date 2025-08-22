@@ -83,7 +83,6 @@ class DetectionResult(BaseModel):
 # Global variables
 pipeline = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MODEL_PATH = os.getenv("MODEL_PATH")  
 ONNX_MODEL_PATH = os.getenv("ONNX_MODEL_PATH")  # For fast inference
@@ -170,13 +169,10 @@ class ClimateDetectionPipeline:
 
     def setup_all_llms(self):
         """Initialize all available LLM services"""
-        self.setup_gpt()
         self.setup_gemini()
-        self.setup_groq()
         
         # Log which services are available
         available_services = []
-        if self.gpt_client: available_services.append("GPT-4o")
         if self.gemini_model: available_services.append("Gemini")
         if self.groq_client: available_services.append("LLaMA-3")
         
@@ -314,35 +310,6 @@ class ClimateDetectionPipeline:
             if logits.shape[-1] != 2:
                 raise ValueError(f"Expected 2 classes, but PyTorch model outputs {logits.shape[-1]} classes")
 
-    def setup_gpt(self):
-        """Initialize OpenAI GPT client and verify GPT-4o connection"""
-        try:
-            logger.info("Setting up GPT (OpenAI)...")
-            from openai import OpenAI
-
-            if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-api-key-here":
-                logger.warning("OPENAI_API_KEY not set")
-                self.gpt_client = None
-                return
-
-            self.gpt_client = OpenAI(api_key=OPENAI_API_KEY)
-
-            # Test connection
-            test_response = self.gpt_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": "Say 'test'"}],
-                temperature=0,
-                max_tokens=50
-            )
-
-            logger.info("OpenAI GPT-4o setup successful")
-
-        except ImportError:
-            logger.error("openai package not installed. Run: pip install openai")
-            self.gpt_client = None
-        except Exception as e:
-            logger.error(f"GPT setup failed: {e}")
-            self.gpt_client = None
 
     def setup_gemini(self):
         """Initialize Gemini API with correct model name"""
