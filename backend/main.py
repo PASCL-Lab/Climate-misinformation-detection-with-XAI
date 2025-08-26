@@ -88,6 +88,7 @@ MODEL_PATH = os.getenv("MODEL_PATH")
 ONNX_MODEL_PATH = os.getenv("ONNX_MODEL_PATH")  # For fast inference
 PYTORCH_MODEL_PATH = os.getenv("PYTORCH_MODEL_PATH")  # For XAI
 USE_ONNX_FOR_INFERENCE = os.getenv("USE_ONNX_FOR_INFERENCE", "true").lower() == "true"
+QUANTIZE_MODEL_PATH = os.getenv("QUANTIZE_MODEL_PATH")  # For quantized model
 
 class TextPreprocessor:
     """
@@ -253,7 +254,7 @@ class ClimateDetectionPipeline:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 
-                self.pytorch_model = AutoModelForSequenceClassification.from_pretrained(PYTORCH_MODEL_PATH)
+                self.pytorch_model = torch.load(QUANTIZE_MODEL_PATH)
                 self.pytorch_model.eval()
             
             # Test PyTorch model
