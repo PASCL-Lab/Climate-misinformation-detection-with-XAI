@@ -15,8 +15,8 @@ The Climate Misinformation Detector is a browser extension that  analyze climate
 - Automatic text transfer to analysis panel
 
 ### AI-Powered Analysis
-- **Ensemble  Model** combining Google Gemini and fine-tuned BERT
-- **Three-tier classification**: SUPPORT, REFUTE, NOT_ENOUGH_INFO
+- **Ensemble  Model** combining Google Gemini and fine-tuned Climate-BERT
+- **Binary classification**: True and False
 - **Confidence scoring** with visual progress bars
 - **Explanations** showing which words influenced the decision of the model ensuring transparency and trust for users.
 
@@ -104,7 +104,7 @@ The system combines ensemble approach for analysis:
    - Evaluates scientific credibility against authoritative sources
    - Provides reasoning and context
 
-2. **Fine-tuned Roberta Model**
+2. **Fine-tuned climate-bert Model**
    - Specialized for climate misinformation detection
    - Trained on climate science literature
    
@@ -118,37 +118,32 @@ The system combines ensemble approach for analysis:
 ### Fine-tuned Model Details
 
 #### Model Architecture
-- **Base Model**: [Add  base model details here]
-- **Fine-tuning Approach**: [Add fine-tuning methodology]
-- **Model Size**: [Add model parameters/size]
-- **Training Framework**: [Add framework used - e.g., Transformers, PyTorch]
+- **Base Model**: climate-bert
+- **Training Framework**: Pytorch
 
-#### Training Data
-- **Dataset Name**: [Add  dataset name/source]
-- **Dataset Size**: [Add number of samples, train/val/test split]
-- **Data Sources**: [Add where the data came from]
-- **Labeling Methodology**: [Add how labels were assigned]
-- **Data Preprocessing**: [Add preprocessing steps]
+#### Training Data for Finetuning
+- **Dataset Size**: After preprocessing, our final dataset comprises 4,075 samples with the following distribution:
+ • True: 2,149 samples (52.7%)
+ • False: 1,926 samples (47.3%)
+- **Data Sources**: CLIMATE-FEVER,Social Media platforms and LLM generated.
+- **Labeling Methodology**: True-> Not misinformation False -> misinformation
+- **Data Preprocessing**:  Conflict resolution strategies were applied for text received with conflicting labels and similarity-based detection was used to detect and manage exact and near-duplicate content.Lastly, standardized text preprocessing techniques were applied to ensure consistency. This included URL removal,hashtag normalization, mention removal, whitespace normalization case standardization and noise reduction.
 
 #### Model Performance
-- **Accuracy**: [Add accuracy metrics]
-- **Precision/Recall**: [Add per-class metrics]
-- **F1-Score**: [Add F1 scores]
+- **Accuracy**: 0.892
+- **Macro F1-Score**: 0.891
 
 
 ### Classification System
 
-**SUPPORT** (Green)
+**True** (Green)
 - Scientific evidence supports the statement
 - Backed by peer-reviewed research and consensus
 
-**REFUTE** (Red)  
+**False** (Red)  
 - Scientific evidence contradicts the statement
 - Conflicts with established climate science
 
-**NOT_ENOUGH_INFO** (Orange)
-- Insufficient scientific evidence available
-- Statement may be opinion-based or require more research
 
 ## Configuration
 
@@ -191,4 +186,4 @@ Edit `manifest.json` for permissions and settings:
 
 **Quick Start**: Install dependencies → Start `main.py` → Load extension → Start fact-checking! 
 
-**Goal**: Combat climate misinformation with transparent, AI-powered analysis that helps users make informed decisions about climate science claims.
+**Goal**: Combat climate misinformation with transparent, AI-powered analysis that helps users make informed decisions about climate science claims.It is for educational purposes only.
