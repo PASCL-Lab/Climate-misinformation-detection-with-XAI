@@ -254,7 +254,8 @@ class ClimateDetectionPipeline:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 
-                self.pytorch_model = torch.load(QUANTIZE_MODEL_PATH)
+                self.pytorch_model = AutoModelForSequenceClassification.from_pretrained(PYTORCH_MODEL_PATH)
+                # self.pytorch_model = torch.load(QUANTIZE_MODEL_PATH)
                 self.pytorch_model.eval()
             
             # Test PyTorch model
