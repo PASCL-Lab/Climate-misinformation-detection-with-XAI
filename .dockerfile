@@ -1,7 +1,6 @@
-# Use Python 3.11 slim image for better compatibility with your ML libraries
+
 FROM python:3.11-slim
 
-# Install system dependencies needed for your ML packages
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
