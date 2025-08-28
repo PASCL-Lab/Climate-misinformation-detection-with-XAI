@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy your HuggingFace models from backend directory
-COPY backend/models/final_model_augv2_89 ./models/
+COPY backend/model/final_model_augv2_89 ./models/
 
 # Copy ONNX model folder from root directory
 COPY onnx_models/final_model_augv2_89/ ./onnx_models/final_model_augv2_89/
