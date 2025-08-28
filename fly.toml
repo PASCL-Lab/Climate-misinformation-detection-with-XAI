@@ -1,19 +1,18 @@
-# fly.toml app configuration file generated for cmi-with-xai on 2025-08-29T02:51:00+05:00
+# fly.toml app configuration file generated for cmi-with-xai-delicate-sun-4817 on 2025-08-29T04:40:56+05:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'cmi-with-xai'
+app = 'cmi-with-xai-delicate-sun-4817'
 primary_region = 'sea'
 
 [build]
-  dockerfile = "Dockerfile"
-
+  dockerfile = 'Dockerfile'
 
 [env]
+  ONNX_MODEL_PATH = '/app/onnx_models/final_model_augv2_89/model.onnx'
   PORT = '8000'
-  ONNX_MODEL_PATH="/app/onnx_models/final_model_augv2_89/model.onnx" 
-  PYTORCH_MODEL_PATH="/app/backend/model/final_model_augv2_89"
+  PYTORCH_MODEL_PATH = '/app/backend/model/final_model_augv2_89'
 
 [http_service]
   internal_port = 8000
