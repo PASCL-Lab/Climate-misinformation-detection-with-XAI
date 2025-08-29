@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir \
        torch --index-url https://download.pytorch.org/whl/cpu \
-       onnxruntime \
+       onnxruntime==1.17.0 \
     && pip install --no-cache-dir -r requirements.txt
 
 # Final runtime image
