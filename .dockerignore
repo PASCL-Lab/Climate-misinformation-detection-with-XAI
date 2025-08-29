@@ -1,9 +1,22 @@
-# flyctl launch added from .gitignore
-**\.env
-**\try.py
-**\backend\__pycache__
-**\results
-**\backend\models
-**\node_modules
-**\chrome-extension.zip
+# Environment files
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Specific files
+try.py
+
+# Backend models (if you copy only specific model files)
+backend/models/
+
+# Results folder
+results/
+
+# Node modules and other large files
+node_modules/
+chrome-extension.zip
+
+# Fly.io config
 fly.toml
