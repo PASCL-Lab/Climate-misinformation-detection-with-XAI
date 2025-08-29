@@ -172,7 +172,7 @@ class ClimateDetectionPipeline:
         # Log which services are available
         available_services = []
         if self.gemini_model: available_services.append("Gemini")
-        if self.groq_client: available_services.append("LLaMA-3")
+        # if self.groq_client: available_services.append("LLaMA-3")
         
         logger.info(f"Available LLM services: {', '.join(available_services) if available_services else 'None'}")
 
