@@ -29,6 +29,7 @@ primary_region = 'sea'
     handlers = ['tls', 'http']
 
 [[vm]]
-  memory = '6gb'        # now allowed
-  cpu_kind = 'dedicated'
+  memory = "6gb"        
+  cpu_kind = "performance"  
   cpus = 2
+
