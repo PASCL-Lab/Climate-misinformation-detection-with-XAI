@@ -1,6 +1,6 @@
 
 
-const API_BASE_URL = 'https://cmi-with-xai-delicate-sun-4817.fly.dev'
+const API_BASE_URL = 'https://cmi-with-xai.fly.dev'
 
 
 // DOM elements

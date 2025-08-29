@@ -11,13 +11,15 @@ WORKDIR $APP_HOME
 # Copy only necessary files
 COPY requirements.txt ./ 
 COPY main.py ./ 
-COPY onnx_models/final_model_augv2_89/model.onnx ./onnx_models/final_model_augv2_89/model.onnx
+COPY onnx_models/final_model_augv2_89/model.onnx ./model.onnx
 COPY backend/model/final_model_augv2_89 ./backend/model/final_model_augv2_89
 
 
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && find /usr/local/lib/python*/site-packages -name "__pycache__" -type d -exec rm -rf {} +
+
 
 # Expose the port Fly.io will use
 EXPOSE 8080

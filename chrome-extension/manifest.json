@@ -11,7 +11,7 @@
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://cmi-with-xai-delicate-sun-4817.fly.dev"
+    "https://cmi-with-xai.fly.dev"
   ],
   "action": {
     "default_popup": "popup.html",
