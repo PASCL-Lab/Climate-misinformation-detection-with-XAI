@@ -56,7 +56,7 @@ app = FastAPI(title="Climate Misinformation Detection API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://yourdomain.com", "https://climate-misinformation-detection-with-xai.onrender.com"] ,
+    allow_origins=["https://yourdomain.com", "https://cmi-with-xai-delicate-sun-4817.fly.dev"] ,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -196,7 +196,7 @@ class ClimateDetectionPipeline:
                 raise FileNotFoundError("No valid model path found for tokenizer")
             
             # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(PYTORCH_MODEL_PATH)
+            self.tokenizer = AutoTokenizer.from_pretrained("ImaanIbrar/Climate-misinformation-classification")
             logger.info(" Tokenizer loaded")
             
             # Load ONNX model for fast inference
@@ -254,7 +254,7 @@ class ClimateDetectionPipeline:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 
-                self.pytorch_model = AutoModelForSequenceClassification.from_pretrained(PYTORCH_MODEL_PATH)
+                self.pytorch_model = AutoModelForSequenceClassification.from_pretrained("ImaanIbrar/Climate-misinformation-classification")
                 # self.pytorch_model = torch.load(QUANTIZE_MODEL_PATH)
                 self.pytorch_model.eval()
             
