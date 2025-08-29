@@ -1,9 +1,0 @@
-{
-  "model_type": "roberta",
-  "num_labels": 2,
-  "max_length": 256,
-  "label_mapping": {
-    "0": "REFUTE",
-    "1": "SUPPORT"
-  }
-}
