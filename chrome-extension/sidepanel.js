@@ -1,6 +1,6 @@
 
 
-const API_BASE_URL = 'https://climate-misinformation-detection-with-xai.onrender.com'
+const API_BASE_URL = 'https://cmi-with-xai-delicate-sun-4817.fly.dev'
 
 
 // DOM elements
