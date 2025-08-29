@@ -1,2 +1,6 @@
 fly.toml
 .venv
+_pycache__/
+.envrc
+.venv/
+.git/
