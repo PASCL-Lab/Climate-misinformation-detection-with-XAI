@@ -15,9 +15,8 @@ COPY requirements.txt .
 # Install CPU-only Torch for Python 3.10
 RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
 
-# Install other dependencies
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-# Force install typing_extensions to avoid missing module
+# Install all other dependencies normally
+RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir typing_extensions
 
 # ===== Stage 2: Final image =====
@@ -26,8 +25,8 @@ FROM python:3.10-slim-bullseye
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Copy installed packages
-COPY --from=builder /install /usr/local
+# Copy installed packages from builder's system site-packages
+COPY --from=builder /usr/local /usr/local
 
 # Copy essential app files
 COPY main.py .
