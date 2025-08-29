@@ -32,7 +32,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy only necessary code + models
 COPY main.py .
-COPY backend/model/final_model_augv2_89 ./models/
+COPY backend/model/final_model_augv2_89 ./models/final_model_augv2_89/
 COPY onnx_models/final_model_augv2_89/model.onnx ./onnx_models/final_model_augv2_89/model.onnx
 
 # Non-root user
