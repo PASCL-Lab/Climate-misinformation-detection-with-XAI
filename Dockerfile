@@ -1,47 +1,27 @@
-FROM python:3.11-slim as builder
+FROM python:3.11 AS builder
 
-# Install build deps only in builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    build-essential \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY requirements.txt .
-
-# Install CPU-only versions of big libs
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
-
-# Final runtime image
-FROM python:3.11-slim
-
-WORKDIR /app
-
-ENV PYTHONPATH=/app \
-    PYTHONUNBUFFERED=1 \
+ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
-COPY --from=builder /usr/local/bin /usr/local/bin
+WORKDIR /app
 
-# Copy only necessary code + models
-COPY main.py .
-COPY onnx_models/final_model_augv2_89/model.onnx ./onnx_models/final_model_augv2_89/model.onnx
+# Create venv and install requirements
+RUN python -m venv .venv
+COPY requirements.txt ./
+RUN .venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Non-root user
-RUN useradd --create-home --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app
-USER appuser
+# Runtime image
+FROM python:3.11-slim
+WORKDIR /app
 
-HEALTHCHECK --interval=30s --timeout=30s --start-period=90s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Install runtime libraries if needed (torch/onnx/scipy sometimes require these)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 libopenblas-base libomp-dev curl \
+    && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 8000
+COPY --from=builder /app/.venv .venv/
+COPY . .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+EXPOSE 8080
+
+CMD ["/app/.venv/bin/uvicorn", "main:app", "--host=0.0.0.0", "--port=8080", "--workers=1"]
