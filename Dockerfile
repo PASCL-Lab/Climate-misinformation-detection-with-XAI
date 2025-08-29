@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/
 
 # Install other dependencies
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Force install typing_extensions to avoid missing module
+RUN pip install --no-cache-dir typing_extensions
 
 # ===== Stage 2: Final image =====
 FROM python:3.10-slim-bullseye
