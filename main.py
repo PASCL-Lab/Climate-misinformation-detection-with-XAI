@@ -1,14 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import json
 import os
 import re
-import openai
-import requests
 import time
 import pandas as pd
-import string
 from typing import Dict, List, Any, Optional, Tuple
 import logging
 from dotenv import load_dotenv
