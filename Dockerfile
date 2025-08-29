@@ -1,52 +1,51 @@
+FROM python:3.11-slim as builder
 
-FROM python:3.11-slim
-
-RUN apt-get update && apt-get install -y \
+# Install build deps only in builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    curl \
-    git \
     build-essential \
+    git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Copy requirements file first (for better Docker layer caching)
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Install CPU-only versions of big libs
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+       torch --index-url https://download.pytorch.org/whl/cpu \
+       onnxruntime \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy your HuggingFace models from backend directory
-COPY backend/model/final_model_augv2_89 ./models/
+# Final runtime image
+FROM python:3.11-slim
 
-# Copy ONNX model folder from root directory
-COPY onnx_models/final_model_augv2_89/ ./onnx_models/final_model_augv2_89/
+WORKDIR /app
 
-# Copy your main application file from root
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy only necessary code + models
 COPY main.py .
+COPY backend/model/final_model_augv2_89 ./models/
+COPY onnx_models/final_model_augv2_89/model.onnx ./onnx_models/final_model_augv2_89/model.onnx
 
-# Copy the entire backend directory (for other backend files)
-COPY backend/ ./backend/
-
-# Create a non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser && \
-    chown -R appuser:appuser /app
+# Non-root user
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
-# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=30s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Expose the port your FastAPI app runs on
 EXPOSE 8000
 
-# Start the FastAPI application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
