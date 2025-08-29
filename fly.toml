@@ -35,6 +35,6 @@ primary_region = 'sea'
     handlers = ['tls', 'http']
 
 [[vm]]
-  memory = '4gb'
+  memory = '5gb'
   cpu_kind = 'performance'
   cpus = 1
