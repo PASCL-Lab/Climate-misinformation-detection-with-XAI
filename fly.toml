@@ -12,7 +12,7 @@ primary_region = 'sea'
 [env]
   ONNX_MODEL_PATH = '/app/onnx_models/final_model_augv2_89/model.onnx'
   PORT = '8080'
-  PYTORCH_MODEL_PATH = '/app/models/final_model_augv2_89'
+  PYTORCH_MODEL_PATH = '/app/backend/model/final_model_augv2_89'
 
 [http_service]
   internal_port = 8080

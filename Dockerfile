@@ -9,6 +9,8 @@ WORKDIR /app
 RUN python -m venv .venv
 COPY requirements.txt ./
 RUN .venv/bin/pip install --no-cache-dir -r requirements.txt
+COPY onnx_models/final_model_augv2_89/model.onnx /app/onnx_models/final_model_augv2_89/model.onnx
+COPY backend/model/final_model_augv2_89 /app/backend/model/final_model_augv2_89
 
 # Runtime image
 FROM python:3.11-slim
@@ -21,4 +23,5 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["/app/.venv/bin/uvicorn", "main:app", "--host=0.0.0.0", "--port=8080", "--workers=1"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "1", "-b", "0.0.0.0:$PORT", "main:app"]
+
